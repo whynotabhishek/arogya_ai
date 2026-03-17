@@ -1,3 +1,5 @@
 {
-    "root": "arogya-ai"
+    "root": "arogya-ai",
+    "buildCommand": "npm run build",
+    "installCommand": "npm install"
 }
