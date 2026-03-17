@@ -10,7 +10,7 @@ import {
 export type HealthIntent = "symptom" | "medicine_query" | "emergency" | "location" | "general";
 export type Severity = "safe" | "caution" | "urgent";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy_key_for_build" });
 const MODEL = "llama-3.3-70b-versatile";
 
 async function complete(systemPrompt: string, userPrompt: string, maxTokens: number): Promise<string> {
