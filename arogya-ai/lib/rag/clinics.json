@@ -1,0 +1,162 @@
+[
+    {
+        "name": "Unkal PHC",
+        "district": "Dharwad",
+        "lat": 15.3647,
+        "lng": 75.124,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2261201"
+    },
+    {
+        "name": "Navanagar PHC",
+        "district": "Dharwad",
+        "lat": 15.4176,
+        "lng": 75.0148,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2234502"
+    },
+    {
+        "name": "Hubli Keshwapur PHC",
+        "district": "Dharwad",
+        "lat": 15.3478,
+        "lng": 75.1391,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2371104"
+    },
+    {
+        "name": "Kusugal PHC",
+        "district": "Dharwad",
+        "lat": 15.4131,
+        "lng": 75.2087,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2418805"
+    },
+    {
+        "name": "Belur PHC",
+        "district": "Dharwad",
+        "lat": 15.2893,
+        "lng": 75.0938,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2271903"
+    },
+    {
+        "name": "Kundgol PHC",
+        "district": "Dharwad",
+        "lat": 15.2578,
+        "lng": 75.2451,
+        "timing": "8AM - 2PM",
+        "phone": "0836-2991207"
+    },
+    {
+        "name": "Sirsi Urban PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.6195,
+        "lng": 74.8354,
+        "timing": "8AM - 2PM",
+        "phone": "08384-226501"
+    },
+    {
+        "name": "Ankola PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.6608,
+        "lng": 74.3043,
+        "timing": "8AM - 2PM",
+        "phone": "08388-231109"
+    },
+    {
+        "name": "Karwar PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.8123,
+        "lng": 74.1297,
+        "timing": "8AM - 2PM",
+        "phone": "08382-226402"
+    },
+    {
+        "name": "Haliyal PHC",
+        "district": "Uttara Kannada",
+        "lat": 15.3284,
+        "lng": 74.7566,
+        "timing": "8AM - 2PM",
+        "phone": "08284-220315"
+    },
+    {
+        "name": "Yellapur PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.9647,
+        "lng": 74.7064,
+        "timing": "8AM - 2PM",
+        "phone": "08419-261811"
+    },
+    {
+        "name": "Kumta PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.4264,
+        "lng": 74.4207,
+        "timing": "8AM - 2PM",
+        "phone": "08386-222344"
+    },
+    {
+        "name": "Siddapur PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.3438,
+        "lng": 74.8926,
+        "timing": "8AM - 2PM",
+        "phone": "08389-230578"
+    },
+    {
+        "name": "Mundgod PHC",
+        "district": "Uttara Kannada",
+        "lat": 14.9705,
+        "lng": 75.0369,
+        "timing": "8AM - 2PM",
+        "phone": "08301-294175"
+    },
+    {
+        "name": "Haveri PHC",
+        "district": "Haveri",
+        "lat": 14.7937,
+        "lng": 75.4041,
+        "timing": "8AM - 2PM",
+        "phone": "08375-232266"
+    },
+    {
+        "name": "Ranebennur PHC",
+        "district": "Haveri",
+        "lat": 14.6229,
+        "lng": 75.6176,
+        "timing": "8AM - 2PM",
+        "phone": "08373-267920"
+    },
+    {
+        "name": "Byadgi PHC",
+        "district": "Haveri",
+        "lat": 14.6737,
+        "lng": 75.4864,
+        "timing": "8AM - 2PM",
+        "phone": "08374-231660"
+    },
+    {
+        "name": "Shiggaon PHC",
+        "district": "Haveri",
+        "lat": 14.9911,
+        "lng": 75.2251,
+        "timing": "8AM - 2PM",
+        "phone": "08378-255031"
+    },
+    {
+        "name": "Savanur PHC",
+        "district": "Haveri",
+        "lat": 14.9735,
+        "lng": 75.3378,
+        "timing": "8AM - 2PM",
+        "phone": "08377-241993"
+    },
+    {
+        "name": "Hirekerur PHC",
+        "district": "Haveri",
+        "lat": 14.4552,
+        "lng": 75.3924,
+        "timing": "8AM - 2PM",
+        "phone": "08376-257104"
+    }
+]
