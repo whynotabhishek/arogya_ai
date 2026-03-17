@@ -1,6 +1,3 @@
 {
-    "buildCommand": "cd arogya-ai && npm run build",
-    "installCommand": "cd arogya-ai && npm ci",
-    "startCommand": "cd arogya-ai && npm start",
-    "outputDirectory": "arogya-ai/.next"
+    "root": "arogya-ai"
 }
