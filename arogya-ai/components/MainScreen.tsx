@@ -148,6 +148,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
     const [mcqCategory, setMcqCategory] = useState<SymptomMCQCategory>("headache");
     const [caretakerActive, setCaretakerActive] = useState(false);
     const [caretakerAge, setCaretakerAge] = useState(30);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -595,18 +596,35 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             </AnimatePresence>
 
             {/* Top Navbar — ALWAYS VISIBLE */}
-            <div className="absolute top-[30px] sm:top-[40px] z-50 flex w-full justify-between items-center px-4 sm:px-6">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <ModelSelector />
+            <header className="fixed top-0 z-50 flex items-center justify-between w-full px-4 sm:px-6 py-3 bg-[rgba(6,10,20,0.85)] backdrop-blur-xl border-b border-white/[0.06]">
+              {/* LEFT */}
+              <div className="flex items-center">
+                <ModelSelector />
+              </div>
+
+              {/* CENTER */}
+              <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+                <h1 className="text-xl font-bold tracking-tight text-white/90" style={{ fontFamily: 'Syne' }}>{tr("appName", lang)}</h1>
+                <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/5" title={`Risk Score: ${riskScore}`}>
+                  <span className={`h-2 w-2 rounded-full ${getRiskLevel(riskScore) === "critical" ? "bg-red-500 animate-pulse" :
+                          getRiskLevel(riskScore) === "high" ? "bg-orange-500 animate-pulse" :
+                              getRiskLevel(riskScore) === "moderate" ? "bg-amber-500" :
+                                  "bg-emerald-500"
+                      }`} />
+                </div>
+              </div>
+
+              {/* RIGHT - Desktop */}
+              <div className="hidden md:flex items-center gap-3">
                     <a
                         href="/dashboard"
                         className="inline-flex min-h-[36px] items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-sm no-underline"
                     >
-                        <BarChart2 className="h-3.5 w-3.5 text-white/70" />
+                        <BarChart2 className="h-4 w-4 text-white/70" />
                         <span>{tr("dashboard", lang)}</span>
                     </a>
                     {hasMemory && (
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 h-[36px]">
                             <span className="relative flex h-1.5 w-1.5">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -614,6 +632,15 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                             <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">{tr("memoryActive", lang)}</span>
                         </div>
                     )}
+                    <button
+                        onClick={sharePrescription}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors"
+                        title={tr("shareWhatsApp", lang)}
+                    >
+                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766 0 1.011.266 1.996.772 2.87l-.824 3.003 3.078-.809a5.728 5.728 0 002.742.695h.001c3.181 0 5.768-2.586 5.768-5.766 0-3.181-2.587-5.767-5.769-5.767z" />
+                        </svg>
+                    </button>
                     <CaretakerToggle
                         language={lang}
                         onCaretakerChange={(active, age) => {
@@ -621,31 +648,6 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                             setCaretakerAge(age);
                         }}
                     />
-                </div>
-
-                <div className="flex flex-col items-center pointer-events-none absolute left-1/2 -translate-x-1/2">
-                    <div className="flex items-center gap-2">
-                        <h1 className="text-xl font-bold tracking-tight text-white/90">{tr("appName", lang)}</h1>
-                        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/5" title={`Risk Score: ${riskScore}`}>
-                            <span className={`h-2 w-2 rounded-full ${getRiskLevel(riskScore) === "critical" ? "bg-red-500 animate-pulse" :
-                                    getRiskLevel(riskScore) === "high" ? "bg-orange-500 animate-pulse" :
-                                        getRiskLevel(riskScore) === "moderate" ? "bg-amber-500" :
-                                            "bg-emerald-500"
-                                }`} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2 sm:gap-3">
-                    <button
-                        onClick={sharePrescription}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors min-w-[48px] min-h-[48px]"
-                        title={tr("shareWhatsApp", lang)}
-                    >
-                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766 0 1.011.266 1.996.772 2.87l-.824 3.003 3.078-.809a5.728 5.728 0 002.742.695h.001c3.181 0 5.768-2.586 5.768-5.766 0-3.181-2.587-5.767-5.769-5.767z" />
-                        </svg>
-                    </button>
                     {session?.user || userProfile ? (
                         <div className="flex items-center gap-2">
                             {displayUserImage ? (
@@ -656,7 +658,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                                 </div>
                             )}
                             {session?.user && (
-                                <button onClick={() => signOut()} className="text-[10px] font-bold text-white/40 hover:text-red-400 transition-colors uppercase tracking-wider bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full min-h-[36px]">
+                                <button onClick={() => signOut()} className="text-[10px] font-bold text-white/40 hover:text-red-400 transition-colors uppercase tracking-wider bg-white/5 hover:bg-white/10 px-3 py-1 rounded-full h-[36px]">
                                     {tr("logout", lang)}
                                 </button>
                             )}
@@ -664,13 +666,77 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                     ) : (
                         <button
                             onClick={() => signIn("google")}
-                            className="text-xs font-bold text-white transition-colors tracking-wide bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-white/10 min-h-[36px]"
+                            className="text-xs font-bold text-white transition-colors tracking-wide bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-white/10 h-[36px]"
                         >
                             <span>{tr("signIn", lang)}</span>
                         </button>
                     )}
-                </div>
-            </div>
+              </div>
+
+              {/* RIGHT - Mobile */}
+              <div className="md:hidden flex items-center relative">
+                   <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="focus:outline-none">
+                       {displayUserImage ? (
+                            <img src={displayUserImage} alt="User" className="h-8 w-8 rounded-full ring-2 ring-white/10 object-cover" />
+                       ) : (
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,140,0,0.2)] text-[#FF8C00] text-xs font-bold ring-1 ring-white/20">
+                                {userProfile?.name?.substring(0, 2)?.toUpperCase() || "GU"}
+                            </div>
+                       )}
+                   </button>
+                   {mobileMenuOpen && (
+                     <>
+                        <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
+                        <div className="absolute top-[48px] right-0 min-w-[230px] bg-[rgba(13,21,37,0.98)] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-2 z-50 shadow-2xl flex flex-col gap-2">
+                            <a
+                                href="/dashboard"
+                                className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/5 bg-white/5 text-sm font-medium text-white hover:bg-white/10 no-underline transition-all"
+                            >
+                                <BarChart2 className="h-4 w-4 text-white/50" />
+                                <span>{tr("dashboard", lang)}</span>
+                            </a>
+                            {hasMemory && (
+                                <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-sm font-medium">
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                    </span>
+                                    <span className="text-emerald-400">{tr("memoryActive", lang)}</span>
+                                </div>
+                            )}
+                            <button
+                                onClick={sharePrescription}
+                                className="flex items-center w-full gap-3 px-3 py-2 rounded-xl border border-white/5 bg-white/5 text-sm font-medium text-white hover:bg-white/10 transition-colors text-left"
+                            >
+                                <svg className="h-4 w-4 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766 0 1.011.266 1.996.772 2.87l-.824 3.003 3.078-.809a5.728 5.728 0 002.742.695h.001c3.181 0 5.768-2.586 5.768-5.766 0-3.181-2.587-5.767-5.769-5.767z" />
+                                </svg>
+                                <span>{tr("shareWhatsApp", lang)}</span>
+                            </button>
+                            <div className="px-1 py-1">
+                                <CaretakerToggle
+                                    language={lang}
+                                    onCaretakerChange={(active, age) => {
+                                        setCaretakerActive(active);
+                                        setCaretakerAge(age);
+                                    }}
+                                />
+                            </div>
+                            <div className="h-[1px] w-full bg-white/10 my-1" />
+                            {session?.user || userProfile ? (
+                                <button onClick={() => signOut()} className="flex items-center justify-center w-full gap-3 px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:bg-red-400/10 transition-all text-left">
+                                    {tr("logout", lang)}
+                                </button>
+                            ) : (
+                                <button onClick={() => signIn("google")} className="flex items-center justify-center w-full gap-3 px-3 py-2 rounded-xl text-sm font-bold text-white hover:bg-white/5 transition-all text-left border border-white/10">
+                                    {tr("signIn", lang)}
+                                </button>
+                            )}
+                        </div>
+                     </>
+                   )}
+              </div>
+            </header>
 
             {/* Main Chat Area */}
             <div className="absolute top-[85px] sm:top-[90px] left-1/2 -translate-x-1/2 flex flex-col items-center justify-between w-full h-[calc(100vh-160px)] overflow-hidden px-4 z-10 pb-4">

@@ -18,6 +18,7 @@ const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500'] })
 interface Model {
   id: string
   name: string
+  shortLabel?: string
   description: string
   icon: React.ReactNode
   badge?: string
@@ -25,10 +26,10 @@ interface Model {
 
 // MODEL SELECTOR
 const models: Model[] = [
-  { id: 'kannada', name: 'ಕನ್ನಡ', description: 'Kannada', icon: <Languages className="size-4 text-orange-400" />, badge: 'Default' },
-  { id: 'hindi', name: 'हिंदी', description: 'Hindi', icon: <Languages className="size-4 text-green-400" /> },
-  { id: 'english', name: 'English', description: 'English', icon: <Languages className="size-4 text-blue-400" /> },
-  { id: 'telugu', name: 'తెలుగు', description: 'Telugu', icon: <Languages className="size-4 text-purple-400" /> },
+  { id: 'kannada', name: 'ಕನ್ನಡ', shortLabel: 'ಕ', description: 'Kannada', icon: <Languages className="size-4 text-orange-400" />, badge: 'Default' },
+  { id: 'hindi', name: 'हिंदी', shortLabel: 'ह', description: 'Hindi', icon: <Languages className="size-4 text-green-400" /> },
+  { id: 'english', name: 'English', shortLabel: 'En', description: 'English', icon: <Languages className="size-4 text-blue-400" /> },
+  { id: 'telugu', name: 'తెలుగు', shortLabel: 'తె', description: 'Telugu', icon: <Languages className="size-4 text-purple-400" /> },
 ]
 
 export function ModelSelector({ selectedModel, onModelChange }: { 
@@ -59,10 +60,11 @@ export function ModelSelector({ selectedModel, onModelChange }: {
     <div className={`relative ${dmSans.className}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 text-[#8a8a8f] hover:text-white hover:bg-white/5 active:scale-95"
+        className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[12px] sm:text-xs font-medium transition-all duration-200 text-[#8a8a8f] hover:text-white hover:bg-white/5 active:scale-95"
       >
-        {selected.icon}
-        <span>{selected.name}</span>
+        <div className="shrink-0">{selected.icon}</div>
+        <span className="hidden sm:inline">{selected.name}</span>
+        <span className="sm:hidden">{selected.shortLabel || selected.name}</span>
         <ChevronDown className={`size-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
