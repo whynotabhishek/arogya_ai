@@ -1,26 +1,27 @@
 "use client";
 
-import { ArogyaChat } from "@/components/ui/arogya-chat";
-import { useRouter } from "next/navigation";
+import { AnimatePresence } from "framer-motion";
+import { MainScreen } from "@/components/MainScreen";
 import { useLanguage } from "@/context/LanguageContext";
-import { t } from "@/lib/translations";
 
 export default function Home() {
-    const router = useRouter();
     const { language } = useLanguage();
 
     return (
-        <ArogyaChat
-            title={t("heroTitle", language)}
-            subtitle={t("heroSubtitle", language)}
-            announcementText={t("badgeText", language)}
-            placeholder={t("placeholder", language)}
-            heroHighlight={t("heroHighlight", language)}
-            heroEnding={t("heroEnding", language)}
-            onSend={(message) => {
-                localStorage.setItem("arogya_initial_query", message);
-                router.push("/assistant");
-            }}
-        />
+        <AnimatePresence mode="wait">
+            {language ? (
+                <MainScreen
+                    key="main"
+                    language={language}
+                    onLanguageSwitch={() => {
+                        // The language switch is handled dynamically via the ModelSelector Dropdown now
+                    }}
+                />
+            ) : (
+                <div className="min-h-screen bg-[#060A14] flex items-center justify-center">
+                    {/* Loading empty state while Language loads */}
+                </div>
+            )}
+        </AnimatePresence>
     );
 }
