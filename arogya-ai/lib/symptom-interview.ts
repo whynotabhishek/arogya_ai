@@ -19,39 +19,141 @@ export const DEFAULT_INTERVIEW_STATE: InterviewState = {
     answers: [],
 };
 
-// ── Question bank (Kannada + English bilingual) ─────────
+// ── Question bank (Multi-lingual) ─────────
 
-export const interviewQuestions: Record<SymptomCategory, string[]> = {
-    headache: [
-        "ಎಷ್ಟು ದಿನಗಳಿಂದ ತಲೆ ನೋವು ಇದೆ? / Since how many days do you have this headache?",
-        "ನೋವು ತಲೆಯ ಯಾವ ಭಾಗದಲ್ಲಿ? / Where exactly — front, back, or sides?",
-        "ಜ್ವರ ಕೂಡ ಇದೆಯೇ? / Do you have fever along with it?",
-        "ನೋವು 1-10 ರಲ್ಲಿ ಎಷ್ಟು? / Rate the severity from 1 to 10?",
-    ],
-    fever: [
-        "ಎಷ್ಟು ದಿನಗಳಿಂದ ಜ್ವರ? / Since how many days do you have fever?",
-        "ತಾಪಮಾನ ಎಷ್ಟು? / What is your temperature reading?",
-        "ಮೈ ಕೈ ನೋವು ಇದೆಯೇ? / Do you have body pain or body aches?",
-        "ಮಕ್ಕಳಿಗೆ ಅಥವಾ ವಯಸ್ಕರಿಗೆ? / Is this for a child or an adult?",
-    ],
-    stomach: [
-        "ಎಷ್ಟು ದಿನಗಳಿಂದ ಹೊಟ್ಟೆ ನೋವು? / Since how many days do you have stomach pain?",
-        "ವಾಂತಿ ಆಗುತ್ತಿದೆಯೇ? / Do you have any vomiting?",
-        "ಏನು ತಿಂದ ನಂತರ ನೋವು? / Does the pain start after eating something?",
-        "ಹೊಟ್ಟೆ ನೋವು ಎಲ್ಲಿ? / Where exactly in the stomach — upper, lower, left, or right?",
-    ],
-    chest: [
-        "ಎಷ್ಟು ದಿನಗಳಿಂದ ಎದೆ ನೋವು? / Since how many days do you have chest pain?",
-        "ಉಸಿರಾಟದಲ್ಲಿ ತೊಂದರೆ ಇದೆಯೇ? / Do you have difficulty breathing?",
-        "ಎಡ ಕೈ ನೋವು ಇದೆಯೇ? / Do you have any left arm pain?",
-        "ಮೊದಲು ಹೃದಯ ಸಮಸ್ಯೆ ಇತ್ತೇ? / Do you have any history of heart problems?",
-    ],
-    general: [
-        "ಎಷ್ಟು ದಿನಗಳಿಂದ ಈ ಸಮಸ್ಯೆ? / Since how many days do you have this problem?",
-        "ನೋವು 1-10 ರಲ್ಲಿ ಎಷ್ಟು? / Rate the severity from 1 to 10?",
-        "ಯಾವ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡಿದ್ದೀರಾ? / Have you taken any medicine for this?",
-        "ಮೊದಲು ಈ ಸಮಸ್ಯೆ ಬಂದಿತ್ತೇ? / Has this problem occurred before?",
-    ],
+import type { SupportedLanguage } from "@/prompts/health";
+
+export const interviewQuestions: Record<SymptomCategory, Record<SupportedLanguage, string[]>> = {
+    headache: {
+        english: [
+            "Since how many days do you have this headache?",
+            "Where exactly does it hurt — front, back, or sides?",
+            "Do you also have a fever?",
+            "Rate the pain severity from 1 to 10."
+        ],
+        kannada: [
+            "ಎಷ್ಟು ದಿನಗಳಿಂದ ತಲೆ ನೋವು ಇದೆ?",
+            "ನೋವು ತಲೆಯ ಯಾವ ಭಾಗದಲ್ಲಿ ಇದೆ — ಮುಂದೆ, ಹಿಂದೆ, ಅಥವಾ ಬದಿಯಲ್ಲಿ?",
+            "ಜ್ವರ ಕೂಡ ಇದೆಯೇ?",
+            "ನೋವು 1 ರಿಂದ 10 ರಲ್ಲಿ ಎಷ್ಟಿದೆ?"
+        ],
+        hindi: [
+            "सिरदर्द कितने दिनों से है?",
+            "दर्द सिर के किस हिस्से में है — आगे, पीछे, या किनारों पर?",
+            "क्या आपको बुखार भी है?",
+            "1 से 10 तक दर्द की तीव्रता कितनी है?"
+        ],
+        telugu: [
+            "ఈ తలనొప్పి ఎన్ని రోజుల నుంచి ఉంది?",
+            "నొప్పి తలలో ఎక్కడ ఉంది — ముందు, వెనుక, లేదా పక్కన?",
+            "మీకు జ్వరం కూడా ఉందా?",
+            "1 నుండి 10 వరకు నొప్పి తీవ్రత ఎంత ఉందో చెప్పండి."
+        ]
+    },
+    fever: {
+        english: [
+            "Since how many days do you have a fever?",
+            "What is your temperature currently?",
+            "Do you have body aches?",
+            "Is this for a child or an adult?"
+        ],
+        kannada: [
+            "ಎಷ್ಟು ದಿನಗಳಿಂದ ಜ್ವರ ಇದೆ?",
+            "ತಾಪಮಾನ ಎಷ್ಟಿದೆ?",
+            "ಮೈ ಕೈ ನೋವು ಇದೆಯೇ?",
+            "ಇದು ಮಗುವಿಗೆ ಅಥವಾ ವಯಸ್ಕರಿಗೆ?"
+        ],
+        hindi: [
+            "बुखार कितने दिनों से है?",
+            "अभी आपका तापमान कितना है?",
+            "क्या आपके शरीर में दर्द है?",
+            "क्या यह बच्चे या वयस्क के लिए है?"
+        ],
+        telugu: [
+            "ఎన్ని రోజుల నుంచి జ్వరం ఉంది?",
+            "ప్రస్తుతం ఉష్ణోగ్రత ఎంత ఉంది?",
+            "ఒళ్ళు నొప్పులు ఉన్నాయా?",
+            "ఇది వయోజనులకా లేదా పిల్లలకా?"
+        ]
+    },
+    stomach: {
+        english: [
+            "Since how many days do you have stomach pain?",
+            "Do you have any nausea or vomiting?",
+            "Did the pain start after eating something specific?",
+            "Where does it hurt — upper, lower, left, or right?"
+        ],
+        kannada: [
+            "ಎಷ್ಟು ದಿನಗಳಿಂದ ಹೊಟ್ಟೆ ನೋವು ಇದೆ?",
+            "ವಾಂತಿ ಅಥವಾ ವಾಕರಿಕೆ ಆಗುತ್ತಿದೆಯೇ?",
+            "ಏನಾದರೂ ನಿರ್ದಿಷ್ಟವಾದದ್ದನ್ನು ತಿಂದ ನಂತರ ನೋವು ಶುರುವಾಯಿತೇ?",
+            "ಹೊಟ್ಟೆ ನೋವು ಎಲ್ಲಿ ಇದೆ — ಮೇಲೆ, ಕೆಳಗೆ, ಎಡ, ಅಥವಾ ಬಲ?"
+        ],
+        hindi: [
+            "पेट दर्द कितने दिनों से है?",
+            "क्या उल्टी या मितली हो रही है?",
+            "क्या दर्द कुछ खास खाने के बाद शुरू हुआ?",
+            "पेट में दर्द कहाँ है — ऊपर, नीचे, बाएँ या दाएँ?"
+        ],
+        telugu: [
+            "ఎన్ని రోజుల నుంచి కడుపు నొప్పి ఉంది?",
+            "వాంతులు లేదా వికారం ఉందా?",
+            "ఏదైనా తిన్న తర్వాత నొప్పి మొదలైందా?",
+            "నొప్పి ఎక్కడ ఉంది — పైన, కింద, ఎడమ, లేదా కుడి వైపు?"
+        ]
+    },
+    chest: {
+        english: [
+            "Since how many days do you have chest pain?",
+            "Are you experiencing any shortness of breath?",
+            "Is there pain radiating to your left arm?",
+            "Do you have any history of heart issues?"
+        ],
+        kannada: [
+            "ಎಷ್ಟು ದಿನಗಳಿಂದ ಎದೆ ನೋವು ಇದೆ?",
+            "ಉಸಿರಾಟದಲ್ಲಿ ಏನಾದರೂ ತೊಂದರೆ ಇದೆಯೇ?",
+            "ನೋವು ಎಡ ಕೈಗೆ ಹರಡುತ್ತಿದೆಯೇ?",
+            "ಹಿಂದೆ ಏನಾದರೂ ಹೃದಯ ಸಂಬಂಧಿ ಸಮಸ್ಯೆ ಇತ್ತೇ?"
+        ],
+        hindi: [
+            "सीने में दर्द कितने दिनों से है?",
+            "क्या सांस लेने में कोई तकलीफ हो रही है?",
+            "क्या दर्द आपके बाएं हाथ तक जा रहा है?",
+            "क्या आपको पहले कभी दिल की कोई बीमारी रही है?"
+        ],
+        telugu: [
+            "చాతీ నొప్పి ఎన్ని రోజుల నుంచి ఉంది?",
+            "శ్వాస తీసుకోవడంలో ఏదైనా ఇబ్బంది ఉందా?",
+            "నొప్పి ఎడమ చేతికి వ్యాపిస్తుందా?",
+            "గతంలో గుండె సమస్యలు ఏమైనా ఉన్నాయా?"
+        ]
+    },
+    general: {
+        english: [
+            "Since how many days do you have this problem?",
+            "Rate your problem's severity from 1 to 10.",
+            "Have you taken any medication for this?",
+            "Has this issue occurred before?"
+        ],
+        kannada: [
+            "ಎಷ್ಟು ದಿನಗಳಿಂದ ಈ ಸಮಸ್ಯೆ ಇದೆ?",
+            "ನಿಮ್ಮ ಸಮಸ್ಯೆಯ ತೀವ್ರತೆಯನ್ನು 1 ರಿಂದ 10 ರಲ್ಲಿ ಎಷ್ಟಿದೆ ಎಂದು ಹೇಳಿ.",
+            "ಇದಕ್ಕಾಗಿ ಯಾವುದೇ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡಿದ್ದೀರಾ?",
+            "ಮೊದಲು ಈ ಸಮಸ್ಯೆ ಬಂದಿತ್ತೇ?"
+        ],
+        hindi: [
+            "यह समस्या कितने दिनों से है?",
+            "अपनी समस्या की गंभीरता को 1 से 10 के बीच बताएं।",
+            "क्या आपने इसके लिए कोई दवा ली है?",
+            "क्या यह समस्या पहले भी हुई है?"
+        ],
+        telugu: [
+            "ఈ సమస్య ఎన్ని రోజుల నుంచి ఉంది?",
+            "మీ సమస్య తీవ్రతను 1 నుండి 10 వరకు అంచనా వేయండి.",
+            "దీని కోసం ఏమైనా మందులు వాడారా?",
+            "ఇది ఇంతకు ముందు కూడా జరిగిందా?"
+        ]
+    }
 };
 
 // ── Keyword banks for symptom detection ─────────────────
@@ -144,8 +246,10 @@ export function shouldSkipInterview(userMessage: string): boolean {
 export function getNextQuestion(
     category: SymptomCategory,
     questionIndex: number,
+    language: SupportedLanguage = "english"
 ): string | null {
-    const questions = interviewQuestions[category] ?? interviewQuestions.general;
+    const questionsObj = interviewQuestions[category] ?? interviewQuestions.general;
+    const questions = questionsObj[language] ?? questionsObj.english;
     if (questionIndex < 0 || questionIndex >= questions.length) return null;
     return questions[questionIndex];
 }
@@ -154,7 +258,8 @@ export function getNextQuestion(
  * Get total number of questions for a category.
  */
 export function getTotalQuestions(category: SymptomCategory): number {
-    return (interviewQuestions[category] ?? interviewQuestions.general).length;
+    const questionsObj = interviewQuestions[category] ?? interviewQuestions.general;
+    return questionsObj.english.length;
 }
 
 /**
@@ -165,13 +270,12 @@ export function buildInterviewContext(
     category: SymptomCategory,
     answers: string[],
 ): string {
-    const questions = interviewQuestions[category] ?? interviewQuestions.general;
+    const questionsObj = interviewQuestions[category] ?? interviewQuestions.general;
+    const questions = questionsObj.english; // Build context in english to send to Groq
 
     const lines = questions.map((q, i) => {
-        // Extract English part of the question for context
-        const englishPart = q.split(" / ")[1] ?? q;
         const answer = answers[i] ?? "Not answered";
-        return `Q: ${englishPart}\nA: ${answer}`;
+        return `Q: ${q}\nA: ${answer}`;
     });
 
     const symptomLabel =

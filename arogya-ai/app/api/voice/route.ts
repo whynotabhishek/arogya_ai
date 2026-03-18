@@ -161,7 +161,7 @@ export async function POST(req: Request) {
         // CASE 1: No active interview, message has a symptom → START interview
         if ((!iv || !iv.active) && containsSymptom(message) && !shouldSkipInterview(message)) {
             const category = detectSymptomCategory(message);
-            const firstQuestion = getNextQuestion(category, 0);
+            const firstQuestion = getNextQuestion(category, 0, language);
 
             let questionAudio = "";
             try {
@@ -190,7 +190,7 @@ export async function POST(req: Request) {
             const updatedAnswers = [...(iv.answers ?? []), message];
 
             if (iv.questionIndex < totalQ) {
-                const nextQ = getNextQuestion(iv.category as SymptomCategory, iv.questionIndex);
+                const nextQ = getNextQuestion(iv.category as SymptomCategory, iv.questionIndex, language);
 
                 let questionAudio = "";
                 try {
