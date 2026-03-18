@@ -26,19 +26,20 @@ interface Model {
 
 // MODEL SELECTOR
 const models: Model[] = [
-  { id: 'kannada', name: 'ಕನ್ನಡ', shortLabel: 'ಕ', description: 'Kannada', icon: <Languages className="size-4 text-orange-400" />, badge: 'Default' },
+  { id: 'english', name: 'English', shortLabel: 'En', description: 'English', icon: <Languages className="size-4 text-blue-400" />, badge: 'Default' },
+  { id: 'kannada', name: 'ಕನ್ನಡ', shortLabel: 'ಕ', description: 'Kannada', icon: <Languages className="size-4 text-orange-400" /> },
   { id: 'hindi', name: 'हिंदी', shortLabel: 'ह', description: 'Hindi', icon: <Languages className="size-4 text-green-400" /> },
-  { id: 'english', name: 'English', shortLabel: 'En', description: 'English', icon: <Languages className="size-4 text-blue-400" /> },
   { id: 'telugu', name: 'తెలుగు', shortLabel: 'తె', description: 'Telugu', icon: <Languages className="size-4 text-purple-400" /> },
 ]
 
-export function ModelSelector({ selectedModel, onModelChange }: { 
+export function ModelSelector({ selectedModel, onModelChange, position = 'up' }: { 
   selectedModel?: string
-  onModelChange?: (model: Model) => void 
+  onModelChange?: (model: Model) => void
+  position?: 'up' | 'down' 
 }) {
   const { language, setLanguage } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
-  const resolvedModel = selectedModel || language || 'kannada'
+  const resolvedModel = selectedModel || language || 'english'
   const [selected, setSelected] = useState(models.find(m => m.id === resolvedModel) || models[0])
 
   // Keep in sync with language context
@@ -71,7 +72,7 @@ export function ModelSelector({ selectedModel, onModelChange }: {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[220px] bg-[#0D1525]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className={`absolute ${position === 'up' ? 'bottom-full mb-2 slide-in-from-bottom-2' : 'top-full mt-2 slide-in-from-top-2'} left-0 z-50 min-w-[220px] bg-[#0D1525]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in duration-200`}>
             <div className="p-1.5">
               <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#5a5a5f]">
                 {t('selectLanguage', language)}

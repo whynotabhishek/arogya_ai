@@ -599,7 +599,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             <header className="fixed top-0 z-50 flex items-center justify-between w-full px-4 sm:px-6 py-3 bg-[rgba(6,10,20,0.85)] backdrop-blur-xl border-b border-white/[0.06]">
               {/* LEFT */}
               <div className="flex items-center">
-                <ModelSelector />
+                <ModelSelector position="down" />
               </div>
 
               {/* CENTER */}

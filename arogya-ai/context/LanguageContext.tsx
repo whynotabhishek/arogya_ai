@@ -9,12 +9,12 @@ type LanguageContextValue = {
 };
 
 const LanguageContext = createContext<LanguageContextValue>({
-    language: "kannada",
+    language: "english",
     setLanguage: () => {},
 });
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-    const [language, setLanguageState] = useState<Language>("kannada");
+    const [language, setLanguageState] = useState<Language>("english");
 
     useEffect(() => {
         if (typeof window === "undefined") return;
