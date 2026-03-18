@@ -18,7 +18,7 @@ import { CaretakerToggle } from "@/components/CaretakerToggle";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { saveMessage, getHistory, type Message } from "@/lib/memory";
 import { VoiceWaveform } from "@/components/VoiceWaveform";
-import { RayBackground, ChatInput, ImportButtons, AnnouncementBadge } from "@/components/ui/arogya-chat";
+import { RayBackground, ChatInput, ImportButtons, AnnouncementBadge, ModelSelector } from "@/components/ui/arogya-chat";
 import { ProfileSetup } from "@/components/ProfileSetup";
 import { getPatientProfile, type PatientProfile } from "@/lib/patient-profile";
 import { getStoredRiskScore, getRiskLevel, saveRiskScore } from "@/lib/risk-engine";
@@ -597,13 +597,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             {/* Top Navbar — ALWAYS VISIBLE */}
             <div className="absolute top-[30px] sm:top-[40px] z-50 flex w-full justify-between items-center px-4 sm:px-6">
                 <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                        onClick={() => { vibrateTap(); onLanguageSwitch(); }}
-                        className="inline-flex min-h-[36px] items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-sm"
-                    >
-                        <Languages className="h-3.5 w-3.5 text-white/70" />
-                        <span>{LANGUAGE_LABELS[language] || language}</span>
-                    </button>
+                    <ModelSelector />
                     <a
                         href="/dashboard"
                         className="inline-flex min-h-[36px] items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-sm no-underline"
