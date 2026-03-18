@@ -4,10 +4,12 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Syne, DM_Sans } from 'next/font/google'
 import { 
   Plus, Camera, MapPin, User, Heart, Mic, Languages, Pill,
-  ChevronDown, Check, Send, Square
+  ChevronDown, Check, Send
 } from 'lucide-react'
 import { MicButton } from '../MicButton'
 import { RecordingState } from '@/hooks/useVoiceRecorder'
+import { useLanguage } from '@/context/LanguageContext'
+import { t, type Language } from '@/lib/translations'
 
 const syne = Syne({ subsets: ['latin'], weight: ['800'] })
 const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500'] })
@@ -25,20 +27,31 @@ interface Model {
 const models: Model[] = [
   { id: 'kannada', name: 'ಕನ್ನಡ', description: 'Kannada', icon: <Languages className="size-4 text-orange-400" />, badge: 'Default' },
   { id: 'hindi', name: 'हिंदी', description: 'Hindi', icon: <Languages className="size-4 text-green-400" /> },
-  { id: 'english', name: 'English', description: 'English', icon: <Languages className="size-4 text-blue-400" /> }
+  { id: 'english', name: 'English', description: 'English', icon: <Languages className="size-4 text-blue-400" /> },
+  { id: 'telugu', name: 'తెలుగు', description: 'Telugu', icon: <Languages className="size-4 text-purple-400" /> },
 ]
 
-export function ModelSelector({ selectedModel = 'kannada', onModelChange }: { 
+export function ModelSelector({ selectedModel, onModelChange }: { 
   selectedModel?: string
   onModelChange?: (model: Model) => void 
 }) {
+  const { language, setLanguage } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
-  const [selected, setSelected] = useState(models.find(m => m.id === selectedModel) || models[0])
+  const resolvedModel = selectedModel || language || 'kannada'
+  const [selected, setSelected] = useState(models.find(m => m.id === resolvedModel) || models[0])
+
+  // Keep in sync with language context
+  useEffect(() => {
+    const match = models.find(m => m.id === language)
+    if (match && match.id !== selected.id) {
+      setSelected(match)
+    }
+  }, [language, selected.id])
 
   const handleSelect = (model: Model) => {
     setSelected(model)
     setIsOpen(false)
-    localStorage.setItem('arogya_language', model.id)
+    setLanguage(model.id as Language)
     onModelChange?.(model)
   }
 
@@ -59,7 +72,7 @@ export function ModelSelector({ selectedModel = 'kannada', onModelChange }: {
           <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[220px] bg-[#0D1525]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="p-1.5">
               <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#5a5a5f]">
-                Select Language
+                {t('selectLanguage', language)}
               </div>
               {models.map((model) => (
                 <button
@@ -95,7 +108,7 @@ export function ModelSelector({ selectedModel = 'kannada', onModelChange }: {
 }
 
 // CHAT INPUT
-export function ChatInput({ value, onChange, onSend, isListening, onOptionClick, placeholder = "ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ ಹೇಳಿ...", getPayload, onVoiceResponse }: {
+export function ChatInput({ value, onChange, onSend, isListening, onOptionClick, placeholder, getPayload, onVoiceResponse }: {
   value?: string
   onChange?: (val: string) => void
   onSend?: (message: string) => void
@@ -105,19 +118,12 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
   getPayload?: () => Record<string, any>
   onVoiceResponse?: (data: any) => void
 }) {
+  const { language } = useLanguage()
   const [internalMessage, setInternalMessage] = useState('')
   const message = value !== undefined ? value : internalMessage
   const setMessage = onChange || setInternalMessage
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const [language, setLanguage] = useState('kannada')
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('arogya_language');
-      if (stored) setLanguage(stored);
-    }
-  }, [])
 
   const [recordingState, setRecordingState] = useState<RecordingState>('idle')
   const [recordingTime, setRecordingTime] = useState(0)
@@ -141,8 +147,6 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
       );
     });
   }
-
-  const cancelLabel = language === 'kannada' ? "✕ ರದ್ದುಗೊಳಿಸಿ" : language === 'hindi' ? "✕ रद्द करें" : "✕ Cancel"
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -178,7 +182,7 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={placeholder || t('placeholder', language)}
             className="w-full resize-none bg-transparent text-[15px] text-white placeholder-[#5a5a5f] px-5 pt-5 pb-3 focus:outline-none min-h-[80px] max-h-[200px]"
             style={{ height: '80px' }}
           />
@@ -200,9 +204,9 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
                   <div className="absolute bottom-full left-0 mb-2 z-50 bg-[#0D1525]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div className="p-1.5 min-w-[180px]">
                       {[
-                        { id: 'medicine' as const, icon: <Camera className="size-4" />, label: 'Scan medicine' },
-                        { id: 'clinic' as const, icon: <MapPin className="size-4" />, label: 'Find nearest clinic' },
-                        { id: 'profile' as const, icon: <User className="size-4" />, label: 'My health profile' }
+                        { id: 'medicine' as const, icon: <Camera className="size-4" />, label: t('scanMedicine', language) },
+                        { id: 'clinic' as const, icon: <MapPin className="size-4" />, label: t('nearestClinic', language) },
+                        { id: 'profile' as const, icon: <User className="size-4" />, label: t('myHealthProfile', language) }
                       ].map((item, i) => (
                         <button key={i} onClick={() => { onOptionClick?.(item.id); setShowAttachMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[#a0a0a5] hover:bg-white/5 hover:text-white transition-all duration-150">
                           {item.icon}
@@ -222,7 +226,7 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
           <div className="flex items-center gap-2">
             <button className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium text-[#6a6a6f] hover:text-white hover:bg-white/5 transition-all duration-200">
               <Heart className="size-4" />
-              <span className="hidden sm:inline">History</span>
+              <span className="hidden sm:inline">{t('history', language)}</span>
             </button>
 
             {message.trim() ? (
@@ -231,7 +235,7 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-white transition-all duration-200 active:scale-95 shadow-[0_0_20px_rgba(255,140,0,0.4)]`}
                 style={{ background: 'linear-gradient(135deg, #FF8C00, #E85D00)' }}
               >
-                <span className="hidden sm:inline">ಕಳುಹಿಸಿ · Send</span>
+                <span className="hidden sm:inline">{t('sendButton', language)}</span>
                 <Send className="size-4" />
               </button>
             ) : (
@@ -270,7 +274,7 @@ export function ChatInput({ value, onChange, onSend, isListening, onOptionClick,
         }`}
       >
         <div className="mx-auto w-fit flex items-center justify-between gap-4 bg-[rgba(255,68,68,0.1)] border border-[rgba(255,68,68,0.3)] rounded-xl px-4 py-2.5 backdrop-blur-md">
-          <button onClick={() => window.dispatchEvent(new Event('cancel-microphone-recording'))} className="text-[13px] font-bold text-red-400 hover:text-red-300 min-w-[100px] hover:underline cursor-pointer text-left">{cancelLabel}</button>
+          <button onClick={() => window.dispatchEvent(new Event('cancel-microphone-recording'))} className="text-[13px] font-bold text-red-400 hover:text-red-300 min-w-[100px] hover:underline cursor-pointer text-left">{t('cancelRecording', language)}</button>
           <div className="flex flex-1 items-center gap-2 justify-center">
              <span className="w-2 h-2 rounded-full bg-[#FF4444] animate-pulse shadow-[0_0_8px_#FF4444]" />
              <span className="text-white font-mono text-sm font-medium">{formatTime(recordingTime)}</span>
@@ -336,13 +340,15 @@ export function AnnouncementBadge({ text, href = "#" }: { text: string; href?: s
 
 // IMPORT BUTTONS COMPONENT
 export function ImportButtons({ onImport }: { onImport?: (source: string) => void }) {
+  const { language } = useLanguage()
+
   return (
     <div className={`flex items-center gap-4 justify-center ${dmSans.className}`}>
-      <span className="text-sm text-[#6a6a6f]">or get help with</span>
+      <span className="text-sm text-[#6a6a6f]">{t('orGetHelpWith', language)}</span>
       <div className="flex gap-2">
         {[
-          { id: 'medicine', name: 'Medicine scan', icon: <Pill className="size-4" /> },
-          { id: 'clinic', name: 'Find clinic', icon: <MapPin className="size-4" /> }
+          { id: 'medicine', name: t('medicineScan', language), icon: <Pill className="size-4" /> },
+          { id: 'clinic', name: t('findClinic', language), icon: <MapPin className="size-4" /> }
         ].map((option) => (
           <button
             key={option.id}
@@ -365,47 +371,59 @@ interface BoltChatProps {
   announcementText?: string
   announcementHref?: string
   placeholder?: string
+  heroHighlight?: string
+  heroEnding?: string
   onSend?: (message: string) => void
   onVoiceResponse?: (data: any) => void
   onImport?: (source: string) => void
 }
 
 export function ArogyaChat({
-  title = "ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ",
-  subtitle = "Speak in Kannada, Hindi, or English. \nNo typing required.",
-  announcementText = "Powered by Murf Falcon · <130ms Voice",
+  title,
+  subtitle,
+  announcementText,
   announcementHref = "#",
-  placeholder = "ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ ಹೇಳಿ...",
+  placeholder,
+  heroHighlight,
+  heroEnding,
   onSend,
   onVoiceResponse,
   onImport
 }: BoltChatProps) {
+  const { language } = useLanguage()
+
+  const resolvedTitle = title || t('heroTitle', language)
+  const resolvedSubtitle = subtitle || t('heroSubtitle', language)
+  const resolvedAnnouncement = announcementText || t('badgeText', language)
+  const resolvedPlaceholder = placeholder || t('placeholder', language)
+  const resolvedHighlight = heroHighlight || t('heroHighlight', language)
+  const resolvedEnding = heroEnding || t('heroEnding', language)
+
   return (
     <div className={`relative flex flex-col items-center justify-center min-h-screen w-full overflow-hidden bg-[#060A14] ${dmSans.className}`}>
       <RayBackground />
       <div className="absolute top-[70px]">
-        {/* Announcement badge */}
-          <AnnouncementBadge text={announcementText} href={announcementHref} />
+          <AnnouncementBadge text={resolvedAnnouncement} href={announcementHref} />
         </div>
       {/* Content container */}
       <div className="absolute top-[66%] left-1/2 sm:top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center w-full h-full overflow-hidden px-4">
         {/* Title section */}
         <div className="text-center mb-6">
           <h1 className={`${syne.className} text-4xl sm:text-5xl font-bold text-white tracking-tight mb-1`}>
-            {title}{' '}
+            {resolvedTitle}{' '}
             <span className="bg-gradient-to-b from-[#FF8C00] to-white bg-clip-text text-transparent italic">
-              ಹೇಳಿ
+              {resolvedHighlight}
             </span>
-            {' '}· Ask now
+            <br className="sm:hidden" /> {resolvedEnding}
           </h1>
           <p className="text-base font-semibold sm:text-lg text-[rgba(255,255,255,0.4)] whitespace-pre-line leading-relaxed max-w-[500px] mx-auto mt-3">
-            {subtitle}
+            {resolvedSubtitle}
           </p>
         </div>
 
         {/* Chat input */}
         <div className="w-full max-w-[700px] mb-6 sm:mb-8 mt-2">
-          <ChatInput placeholder={placeholder} onSend={onSend} onVoiceResponse={onVoiceResponse} />
+          <ChatInput placeholder={resolvedPlaceholder} onSend={onSend} onVoiceResponse={onVoiceResponse} />
         </div>
 
         {/* Import buttons */}

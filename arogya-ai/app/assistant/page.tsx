@@ -1,20 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
-import type { SupportedLanguage } from "@/prompts/health";
 import { MainScreen } from "@/components/MainScreen";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function App() {
-    const [language, setLanguage] = useState<SupportedLanguage | null>(null);
+    const { language, setLanguage } = useLanguage();
 
     useEffect(() => {
+        // If no valid language stored, redirect to home for language selection
         const stored = localStorage.getItem("arogya_language");
-        if (stored === "kannada" || stored === "hindi" || stored === "english" || stored === "telugu") {
-            setLanguage(stored);
-        } else {
-            // Force them back to the hero page if they have no language selected
-            window.location.href = '/';
+        if (!stored || !["kannada", "hindi", "english", "telugu"].includes(stored)) {
+            window.location.href = "/";
         }
     }, []);
 
@@ -25,7 +23,7 @@ export default function App() {
                     key="main"
                     language={language}
                     onLanguageSwitch={() => {
-                        window.location.href = '/';
+                        window.location.href = "/";
                     }}
                 />
             ) : (

@@ -1,13 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Cross, Languages, LoaderCircle, Pill, BarChart2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Cross, Languages, LoaderCircle, Pill, BarChart2, Phone, MapPin, Lightbulb } from "lucide-react";
 import type { SupportedLanguage } from "@/prompts/health";
-import { STRINGS, LANGUAGE_LABELS } from "@/lib/i18n";
+import { LANGUAGE_LABELS } from "@/lib/i18n";
+import { t as tr, type Language } from "@/lib/translations";
+import { type InterviewState, DEFAULT_INTERVIEW_STATE, getTotalQuestions, type SymptomCategory } from "@/lib/symptom-interview";
+import { getTodaysTip } from "@/lib/daily-tip";
 
 import { ResponseCard } from "@/components/ResponseCard";
 import { ClinicFinder } from "@/components/ClinicFinder";
+import { SymptomMCQ, type SymptomMCQCategory } from "@/components/SymptomMCQ";
+import { BodyMap, regionLabels, type BodyRegion } from "@/components/BodyMap";
+import { CaretakerToggle } from "@/components/CaretakerToggle";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { saveMessage, getHistory, type Message } from "@/lib/memory";
 import { VoiceWaveform } from "@/components/VoiceWaveform";
@@ -16,8 +23,9 @@ import { ProfileSetup } from "@/components/ProfileSetup";
 import { getPatientProfile, type PatientProfile } from "@/lib/patient-profile";
 import { getStoredRiskScore, getRiskLevel, saveRiskScore } from "@/lib/risk-engine";
 import { getClientSymptomsTracker, trackSymptom } from "@/lib/symptom-tracker";
-import { vibrateSuccess, vibrateWarning, vibrateEmergency } from "@/lib/haptics";
+import { vibrateSuccess, vibrateWarning, vibrateEmergency, vibrateTap } from "@/lib/haptics";
 import { scheduleMedicineReminder } from "@/lib/medicine-reminder";
+import { shareOnWhatsApp } from "@/lib/share";
 
 type ChatRole = "user" | "assistant";
 
@@ -38,11 +46,15 @@ type VoiceResponse = {
         district: string;
         timing: string;
         phone: string;
+        lat?: number;
+        lng?: number;
     };
     transcript?: string;
     error?: string;
     riskScore?: number;
     escalated?: boolean;
+    responseType?: "question" | "advice";
+    interviewState?: InterviewState;
 };
 
 type ScanResponse = {
@@ -65,6 +77,7 @@ type VoiceApiRequest = {
     lat?: number;
     lng?: number;
     history?: Message[];
+    caretakerAge?: number;
 };
 
 type SpeechRecognitionLike = {
@@ -106,7 +119,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
-    const t = useMemo(() => STRINGS[language], [language]);
+    const lang = language as Language;
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isListening, setIsListening] = useState(false);
     const [isVoiceLoading, setIsVoiceLoading] = useState(false);
@@ -126,6 +139,16 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
     const [userProfile, setUserProfile] = useState<PatientProfile | null>(null);
     const [riskScore, setRiskScore] = useState(0);
 
+    // Symptom Interview state
+    const [interviewState, setInterviewState] = useState<InterviewState>(DEFAULT_INTERVIEW_STATE);
+
+    // New feature states
+    const [showBodyMap, setShowBodyMap] = useState(false);
+    const [showMCQ, setShowMCQ] = useState(false);
+    const [mcqCategory, setMcqCategory] = useState<SymptomMCQCategory>("headache");
+    const [caretakerActive, setCaretakerActive] = useState(false);
+    const [caretakerAge, setCaretakerAge] = useState(30);
+
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const streamRef = useRef<MediaStream | null>(null);
@@ -140,9 +163,20 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
 
     const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
+    // Auto greeting on first session
     useEffect(() => {
+        if (typeof window === "undefined") return;
+        const greeted = sessionStorage.getItem("arogya_greeted");
+        if (!greeted) {
+            sessionStorage.setItem("arogya_greeted", "true");
+            // Play greeting after mount
+            const greetingText = tr("greeting", lang);
+            pushMessage("assistant", greetingText);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-
+    useEffect(() => {
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -168,16 +202,24 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
 
         setRiskScore(getStoredRiskScore());
 
+        // Caretaker mode from localStorage
+        try {
+            const ct = localStorage.getItem("arogya_caretaker");
+            if (ct) {
+                const data = JSON.parse(ct);
+                setCaretakerActive(data.active || false);
+                setCaretakerAge(data.age || 30);
+            }
+        } catch { /* ignore */ }
+
         // Handle incoming initial query from landing page
         const pendingQuery = localStorage.getItem('arogya_initial_query');
         if (pendingQuery && pendingQuery.trim() !== '') {
-            // Give a slight delay to allow UI to mount properly before fetching
             setTimeout(() => {
                 submitVoice({ message: pendingQuery, language });
                 localStorage.removeItem('arogya_initial_query');
             }, 500);
         } else if (pendingQuery === '') {
-            // Trigger voice flow immediately if empty
             setTimeout(() => {
                 toggleRecording();
                 localStorage.removeItem('arogya_initial_query');
@@ -192,9 +234,6 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             }, 500);
         } else if (pendingAction === 'clinic') {
             setTimeout(() => {
-                // To auto-trigger clinic finder we would do something here, 
-                // but since it's just scrolling, maybe just focus it.
-                // For now, let's just let it load the assistant page.
                 localStorage.removeItem('arogya_initial_action');
             }, 500);
         }
@@ -240,7 +279,9 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 lng: userLocation?.lng,
                 history: getHistory(),
                 patientProfile: userProfile,
-                symptomsTracker: getClientSymptomsTracker()
+                symptomsTracker: getClientSymptomsTracker(),
+                interviewState,
+                caretakerAge: caretakerActive ? caretakerAge : undefined,
             };
 
             const response = await fetch("/api/voice", {
@@ -261,7 +302,14 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
 
             latestAudioRef.current = payload.audio;
 
-            // F10 tracking and F6 riskScore
+            // Update interview state from server response
+            if (payload.interviewState) {
+                setInterviewState(payload.interviewState);
+            } else if (payload.responseType === "advice") {
+                setInterviewState(DEFAULT_INTERVIEW_STATE);
+            }
+
+            // Tracking and risk
             if (payload.transcript && payload.severity) {
                 trackSymptom(payload.transcript, payload.severity);
             }
@@ -270,7 +318,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 setRiskScore(payload.riskScore);
             }
 
-            // F14 Haptics
+            // Haptics
             if (payload.escalated || payload.severity === "critical" || payload.severity === "urgent") {
                 vibrateEmergency();
             } else if (payload.severity === "caution") {
@@ -283,16 +331,8 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             setCardSeverity(payload.severity);
             setCardClinic(payload.clinic);
             setCardOpen(true);
-            // autoplay managed by DOM <audio autoPlay> component
         } catch {
-            const userMessage =
-                language === "kannada"
-                    ? "ಕ್ಷಮಿಸಿ, ಈಗ ಉತ್ತರಿಸಲು ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."
-                    : language === "hindi"
-                        ? "माफ कीजिए, अभी जवाब नहीं दे पा रहा हूँ। फिर कोशिश करें।"
-                        : language === "telugu"
-                            ? "క్షమించండి, నేను ఇప్పుడు సమాధానం ఇవ్వలేను. దయచేసి మళ్ళీ ప్రయత్నించండి."
-                            : "Sorry, I could not respond right now. Please try again.";
+            const userMessage = tr("apiError", lang);
             pushMessage("assistant", userMessage);
             setCardText(userMessage);
             setCardSeverity("caution");
@@ -326,7 +366,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
 
             vibrateSuccess();
 
-            // F9 Medicine reminder trigger
+            // Medicine reminder trigger
             const textLower = payload.text?.toLowerCase() || "";
             if (textLower.includes("dosage") || textLower.includes("hours") || textLower.includes("goli") || textLower.includes("pill") || textLower.includes("take")) {
                 const wantsReminder = window.confirm(`Arogya AI: Set a reminder for this medicine?`);
@@ -336,14 +376,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 }
             }
         } catch {
-            const friendly =
-                language === "kannada"
-                    ? "ಚಿತ್ರ ಸ್ಪಷ್ಟವಾಗಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಸ್ಪಷ್ಟವಾದ ಫೋಟೋ ನೀಡಿ."
-                    : language === "hindi"
-                        ? "तस्वीर साफ़ नहीं है। कृपया एक और साफ़ फोटो दें।"
-                        : language === "telugu"
-                            ? "చిత్రం స్పష్టంగా లేదు. దయచేసి మరొక స్పష్టమైన ఫోటోను ప్రయత్నించండి."
-                            : "Image is not clear enough. Please try another clear medicine photo.";
+            const friendly = tr("imageError", lang);
             pushMessage("assistant", friendly);
             setCardText(friendly);
             setCardSeverity("caution");
@@ -385,6 +418,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
         try {
             if (!isListening) {
                 setIsListening(true);
+                vibrateTap();
 
                 const SpeechCtor = getSpeechRecognitionCtor();
                 if (SpeechCtor) {
@@ -401,15 +435,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                     };
 
                     recognition.onerror = () => {
-                        setCardText(
-                            language === "kannada"
-                                ? "ಧ್ವನಿ ಕೇಳಿಸಲಿಲ್ಲ. ಮತ್ತೆ ನಿಧಾನವಾಗಿ ಮಾತನಾಡಿ."
-                                : language === "hindi"
-                                    ? "आवाज़ साफ़ नहीं आई। कृपया फिर बोलें।"
-                                    : language === "telugu"
-                                        ? "వాయిస్ సరిగ్గా వినపడలేదు. దయచేసి మళ్ళీ చెప్పండి."
-                                        : "I could not catch that clearly. Please speak once more.",
-                        );
+                        setCardText(tr("voiceError", lang));
                         setCardSeverity("caution");
                         setCardOpen(true);
                     };
@@ -429,15 +455,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 mediaRecorderRef.current?.stop();
             }
         } catch {
-            setCardText(
-                language === "kannada"
-                    ? "ಮೈಕ್ ಅನುಮತಿ ನೀಡಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."
-                    : language === "hindi"
-                        ? "माइक अनुमति दें और फिर कोशिश करें।"
-                        : language === "telugu"
-                            ? "దయచేసి మైక్ అనుమతి ఇవ్వండి మరియు మళ్ళీ ప్రయత్నించండి."
-                            : "Please allow microphone permission and try again.",
-            );
+            setCardText(tr("micPermission", lang));
             setCardSeverity("caution");
             setCardOpen(true);
             setIsListening(false);
@@ -445,6 +463,7 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
     };
 
     const onPickMedicineImage = () => {
+        vibrateTap();
         fileInputRef.current?.click();
     };
 
@@ -460,73 +479,61 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
             await submitScan(imageBase64, file.type || "image/jpeg");
         };
         fileReader.readAsDataURL(file);
-
         event.target.value = "";
     };
 
     const severityLabel =
-        cardSeverity === "safe" ? t.safe : cardSeverity === "caution" ? t.caution : t.urgent;
+        cardSeverity === "safe" ? tr("severity_safe", lang) : cardSeverity === "caution" ? tr("severity_caution", lang) : tr("severity_urgent", lang);
 
     const sharePrescription = () => {
+        vibrateTap();
         if (messages.length === 0) {
-            showToast(t.noConversationError);
+            showToast(tr("noConversationError", lang));
             return;
         }
-
         const doctorMessages = messages.filter(m => m.role === "assistant").map(m => m.text);
-        let summaryText = "";
-
         if (doctorMessages.length > 0) {
-            summaryText = doctorMessages[doctorMessages.length - 1];
-        } else {
-            summaryText = t.noConversationError; // fallback
+            shareOnWhatsApp(doctorMessages[doctorMessages.length - 1], language);
         }
+    };
 
-        import("@/lib/share").then(m => m.shareOnWhatsApp(summaryText, language));
+    const handleSaveAudio = () => {
+        vibrateTap();
+        if (latestAudioRef.current) {
+            const link = document.createElement("a");
+            link.href = latestAudioRef.current.startsWith("http")
+                ? latestAudioRef.current
+                : `data:audio/mp3;base64,${latestAudioRef.current}`;
+            link.download = `arogya-advice-${new Date().toDateString()}.mp3`;
+            link.click();
+        }
     };
 
     const downloadPrescription = () => {
+        vibrateTap();
         if (messages.length === 0) {
-            showToast(t.noConversationError);
+            showToast(tr("noConversationError", lang));
             return;
         }
-
         const patientName = session?.user?.name || "Guest Patient";
-
         let content = `=================================================\n`;
-        content += `               ${t.summaryHeader}               \n`;
+        content += `               ${tr("summaryHeader", lang)}               \n`;
         content += `=================================================\n\n`;
-        content += `Physician: Dr. Arogya (AI Health Assistant)\n`;
         content += `Patient Name: ${patientName}\n`;
         content += `Date: ${new Date().toLocaleDateString()}  Time: ${new Date().toLocaleTimeString()}\n`;
         content += `Language: ${LANGUAGE_LABELS[language]}\n`;
         content += `-------------------------------------------------\n\n`;
-
-        content += `[ CHIEF COMPLAINTS / SYMPTOMS ]\n`;
-
         const userMessages = messages.filter(m => m.role === "user").map(m => m.text);
         if (userMessages.length > 0) {
-            userMessages.forEach((msg, i) => {
-                content += `* ${msg}\n`;
-            });
-        } else {
-            content += `* None recorded directly.\n`;
+            userMessages.forEach((msg) => { content += `* ${msg}\n`; });
         }
-
         content += `\n-------------------------------------------------\n`;
-        content += `[ DOCTOR'S ADVICE / RX ]\n`;
-
         const doctorMessages = messages.filter(m => m.role === "assistant").map(m => m.text);
         if (doctorMessages.length > 0) {
-            const lastAdvice = doctorMessages[doctorMessages.length - 1]; // latest context
-            content += `\n${lastAdvice}\n`;
+            content += `\n${doctorMessages[doctorMessages.length - 1]}\n`;
         }
-
         content += `\n-------------------------------------------------\n`;
-        content += `[ ${t.importantNotice} ]\n`;
-        content += `${t.disclaimer}\n\n`;
-        content += `=================================================\n`;
-        content += `         Powered by Arogya AI & Groq Llama 3     \n`;
+        content += `${tr("disclaimer", lang)}\n`;
         content += `=================================================\n`;
 
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -538,6 +545,24 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    };
+
+    const handleMCQComplete = (contextString: string) => {
+        setShowMCQ(false);
+        submitVoice({ message: contextString, language });
+    };
+
+    const handleBodyRegionSelect = (region: BodyRegion) => {
+        setShowBodyMap(false);
+        const mapping = regionLabels[region];
+        if (mapping.mcqCategory === "headache" || mapping.mcqCategory === "fever" || mapping.mcqCategory === "stomach") {
+            setMcqCategory(mapping.mcqCategory as SymptomMCQCategory);
+            setShowMCQ(true);
+        } else {
+            // General category — just send as text
+            const regionText = tr(mapping.key as any, lang);
+            submitVoice({ message: `${regionText} pain`, language });
+        }
     };
 
     return (
@@ -569,37 +594,44 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 )}
             </AnimatePresence>
 
-            {/* Top Navbar */}
+            {/* Top Navbar — ALWAYS VISIBLE */}
             <div className="absolute top-[30px] sm:top-[40px] z-50 flex w-full justify-between items-center px-4 sm:px-6">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
                     <button
-                        onClick={onLanguageSwitch}
+                        onClick={() => { vibrateTap(); onLanguageSwitch(); }}
                         className="inline-flex min-h-[36px] items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-sm"
                     >
                         <Languages className="h-3.5 w-3.5 text-white/70" />
-                        <span>{LANGUAGE_LABELS[language]}</span>
+                        <span>{LANGUAGE_LABELS[language] || language}</span>
                     </button>
                     <a
                         href="/dashboard"
                         className="inline-flex min-h-[36px] items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-sm no-underline"
                     >
                         <BarChart2 className="h-3.5 w-3.5 text-white/70" />
-                        <span>{language === 'kannada' ? 'ಡ್ಯಾಶ್ಬೋರ್ಡ್' : 'Dashboard'}</span>
+                        <span>{tr("dashboard", lang)}</span>
                     </a>
                     {hasMemory && (
-                        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10">
                             <span className="relative flex h-1.5 w-1.5">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             </span>
-                            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">Memory active</span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">{tr("memoryActive", lang)}</span>
                         </div>
                     )}
+                    <CaretakerToggle
+                        language={lang}
+                        onCaretakerChange={(active, age) => {
+                            setCaretakerActive(active);
+                            setCaretakerAge(age);
+                        }}
+                    />
                 </div>
 
                 <div className="flex flex-col items-center pointer-events-none absolute left-1/2 -translate-x-1/2">
                     <div className="flex items-center gap-2">
-                        <h1 className="text-xl font-bold tracking-tight text-white/90">Arogya AI</h1>
+                        <h1 className="text-xl font-bold tracking-tight text-white/90">{tr("appName", lang)}</h1>
                         <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/5" title={`Risk Score: ${riskScore}`}>
                             <span className={`h-2 w-2 rounded-full ${getRiskLevel(riskScore) === "critical" ? "bg-red-500 animate-pulse" :
                                     getRiskLevel(riskScore) === "high" ? "bg-orange-500 animate-pulse" :
@@ -613,68 +645,90 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                 <div className="flex items-center gap-2 sm:gap-3">
                     <button
                         onClick={sharePrescription}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors"
-                        title="Share via WhatsApp"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors min-w-[48px] min-h-[48px]"
+                        title={tr("shareWhatsApp", lang)}
                     >
                         <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766 0 1.011.266 1.996.772 2.87l-.824 3.003 3.078-.809a5.728 5.728 0 002.742.695h.001c3.181 0 5.768-2.586 5.768-5.766 0-3.181-2.587-5.767-5.769-5.767zm3.178 8.019c-.174.492-.93.931-1.311.97-.348.035-.8.113-2.315-.515-1.831-.762-3.008-2.637-3.098-2.757-.09-.12-.738-.985-.738-1.879s.467-1.348.63-1.53c.163-.182.353-.228.473-.228.12 0 .24.001.345.006.111.005.26-.041.4.298.15.362.51.1246.56.1368.045.12.045.285-.09.435-.135.15-.27.315-.39.42-.135.12-.275.255-.135.495.14.24.625 1.031 1.345 1.676.929.831 1.705 1.091 1.945 1.211.24.12.38.09.52-.075.14-.165.61-.72.77-.975.16-.255.32-.21.545-.12.23.09 1.43.675 1.67.795.24.12.4.18.46.285.06.105.06.615-.114 1.107z" />
-                            <path d="M12.031 2C6.48 2 1.983 6.496 1.983 12.047c0 1.772.463 3.501 1.342 5.027L2 22l5.068-1.328a10.038 10.038 0 004.963 1.32h.004C17.58 21.992 22 17.502 22 11.95 22 6.398 17.582 2 12.031 2zm0 18.337h-.002c-1.5 0-2.97-.404-4.256-1.167l-.304-.18-3.164.83.843-3.084-.198-.315A8.324 8.324 0 013.639 12.05c0-4.636 3.774-8.411 8.392-8.411 4.618 0 8.394 3.775 8.394 8.411 0 4.636-3.775 8.411-8.394 8.411z" />
+                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766 0 1.011.266 1.996.772 2.87l-.824 3.003 3.078-.809a5.728 5.728 0 002.742.695h.001c3.181 0 5.768-2.586 5.768-5.766 0-3.181-2.587-5.767-5.769-5.767z" />
                         </svg>
                     </button>
                     {session?.user || userProfile ? (
                         <div className="flex items-center gap-2">
                             {displayUserImage ? (
-                                <img src={displayUserImage} alt={session?.user?.name || userProfile?.name || "User"} className="h-7 w-7 rounded-full ring-2 ring-white/10 object-cover" />
+                                <img src={displayUserImage} alt={session?.user?.name || userProfile?.name || "User"} className="h-8 w-8 rounded-full ring-2 ring-white/10 object-cover min-w-[32px] min-h-[32px]" />
                             ) : (
-                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white text-xs font-bold ring-1 ring-white/20">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white text-xs font-bold ring-1 ring-white/20 min-w-[32px] min-h-[32px]">
                                     {userProfile?.name?.substring(0, 2)?.toUpperCase() || "GU"}
                                 </div>
                             )}
                             {session?.user && (
-                                <button onClick={() => signOut()} className="hidden sm:block text-[10px] font-bold text-white/40 hover:text-red-400 transition-colors uppercase tracking-wider bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full">
-                                    Logout
+                                <button onClick={() => signOut()} className="text-[10px] font-bold text-white/40 hover:text-red-400 transition-colors uppercase tracking-wider bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full min-h-[36px]">
+                                    {tr("logout", lang)}
                                 </button>
                             )}
                         </div>
                     ) : (
                         <button
                             onClick={() => signIn("google")}
-                            className="text-xs font-bold text-white transition-colors tracking-wide bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-white/10"
+                            className="text-xs font-bold text-white transition-colors tracking-wide bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-white/10 min-h-[36px]"
                         >
-                            <svg className="h-3 w-3" viewBox="0 0 24 24">
-                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="currentColor" />
-                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="currentColor" />
-                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="currentColor" />
-                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="currentColor" />
-                            </svg>
-                            <span className="hidden sm:inline">Sign In</span>
+                            <span>{tr("signIn", lang)}</span>
                         </button>
                     )}
                 </div>
             </div>
 
             {/* Main Chat Area */}
-            <div className="absolute top-[85px] sm:top-[90px] left-1/2 -translate-x-1/2 flex flex-col items-center justify-between w-full h-[calc(100vh-100px)] overflow-hidden px-4 z-10 pb-4">
+            <div className="absolute top-[85px] sm:top-[90px] left-1/2 -translate-x-1/2 flex flex-col items-center justify-between w-full h-[calc(100vh-160px)] overflow-hidden px-4 z-10 pb-4">
 
                 {/* Scrollable Message List */}
-                <div ref={chatRef} className="flex-1 w-full max-w-[700px] overflow-y-auto mb-6 mt-4 px-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <div ref={chatRef} className="flex-1 w-full max-w-[700px] overflow-y-auto mb-4 mt-4 px-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                     {messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center w-full h-full pb-20 pt-16 mt-16 mt-[-100px] sm:mt-0 lg:pt-0">
-                            <div className="mb-8">
-                                <AnnouncementBadge text="Powered by Murf Falcon · <130ms Voice" />
+                        <div className="flex flex-col items-center justify-center w-full h-full pb-20 pt-8">
+                            <div className="mb-6">
+                                <AnnouncementBadge text={tr("badgeText", lang)} />
                             </div>
                             <div className="text-center">
                                 <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight mb-1" style={{ fontFamily: "'Syne', sans-serif" }}>
-                                    {language === 'kannada' ? 'ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ' : language === 'hindi' ? 'अपनी स्वास्थ्य समस्या' : language === 'english' ? 'Your health issue' : 'మీ ఆరోగ్య సమస్య'}{' '}
+                                    {tr("heroTitle", lang)}{' '}
                                     <span className="text-transparent bg-clip-text bg-gradient-to-b from-[#FF8C00] to-white italic">
-                                        {language === 'kannada' ? 'ಹೇಳಿ' : language === 'hindi' ? 'बताएं' : language === 'english' ? 'Tell' : 'చెప్పండి'}
-                                    </span><br className="sm:hidden" /> · Ask now
+                                        {tr("heroHighlight", lang)}
+                                    </span><br className="sm:hidden" /> {tr("heroEnding", lang)}
                                 </h1>
                                 <p className="text-base font-semibold sm:text-lg text-[rgba(255,255,255,0.4)] whitespace-pre-line leading-relaxed max-w-[500px] mx-auto mt-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                                    Speak in Kannada, Hindi, or English.
-                                    <br />No typing required.
+                                    {tr("heroSubtitle", lang)}
                                 </p>
                             </div>
+
+                            {/* Daily tip card */}
+                            <div className="mt-8 w-full max-w-[500px] mx-auto">
+                                <div
+                                    className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                                    style={{
+                                        background: "rgba(255,140,0,0.06)",
+                                        border: "1px solid rgba(255,140,0,0.15)",
+                                    }}
+                                >
+                                    <Lightbulb className="h-5 w-5 text-[#FF8C00] shrink-0" />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-[#FF8C00]/80 uppercase tracking-wider">{tr("dailyTip", lang)}</span>
+                                        <p className="text-sm text-white/70 mt-0.5">{getTodaysTip(lang)}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Body Map button */}
+                            <button
+                                onClick={() => { vibrateTap(); setShowBodyMap(true); }}
+                                className="mt-4 flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all active:scale-95 min-h-[48px]"
+                                style={{
+                                    background: "rgba(255,255,255,0.04)",
+                                    border: "1px solid rgba(255,255,255,0.08)",
+                                    color: "rgba(255,255,255,0.6)",
+                                }}
+                            >
+                                🧍 {tr("tapBody", lang)}
+                            </button>
                         </div>
                     ) : (
                         <div className="flex flex-col gap-6 py-6 w-full mb-8">
@@ -714,6 +768,24 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                                     )}
                                 </motion.div>
                             ))}
+
+                            {/* Inline Response Card (no overlay) */}
+                            {cardOpen && (
+                                <ResponseCard
+                                    open={cardOpen}
+                                    text={cardText}
+                                    severity={cardSeverity}
+                                    severityLabel={severityLabel}
+                                    replayLabel={tr("replay", lang)}
+                                    clinic={cardClinic}
+                                    audioUrl={latestAudioRef.current}
+                                    onReplay={() => playAudio(latestAudioRef.current)}
+                                    onClose={() => setCardOpen(false)}
+                                    onSaveAudio={handleSaveAudio}
+                                    onShareWhatsApp={sharePrescription}
+                                />
+                            )}
+
                             {isVoiceLoading && (
                                 <div className="flex items-end gap-3 w-full justify-start mt-4">
                                     <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-b from-[#FF8C00] to-[#E85D00] flex items-center justify-center p-[1.5px] shadow-lg animate-pulse">
@@ -722,13 +794,109 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                                         </div>
                                     </div>
                                     <div className="rounded-[24px_24px_24px_4px] bg-[rgba(13,21,37,0.7)] backdrop-blur-md border border-white/10 px-5 py-4">
-                                        <LoaderCircle className="h-5 w-5 text-[#FF8C00] animate-spin" />
+                                        <div className="flex items-center gap-2">
+                                            <LoaderCircle className="h-5 w-5 text-[#FF8C00] animate-spin" />
+                                            <span className="text-sm text-white/50">{tr("thinking", lang)}</span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
                         </div>
                     )}
+
+                    {/* Body Map Overlay */}
+                    <AnimatePresence>
+                        {showBodyMap && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="py-4"
+                            >
+                                <BodyMap
+                                    language={lang}
+                                    onRegionSelect={handleBodyRegionSelect}
+                                    onClose={() => setShowBodyMap(false)}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* MCQ overlay */}
+                    <AnimatePresence>
+                        {showMCQ && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="py-4"
+                            >
+                                <SymptomMCQ
+                                    category={mcqCategory}
+                                    language={lang}
+                                    onComplete={handleMCQComplete}
+                                    onClose={() => setShowMCQ(false)}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
+
+                {/* Interview Progress Indicator */}
+                <AnimatePresence>
+                    {interviewState.active && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="w-full max-w-[700px] shrink-0 mb-3"
+                        >
+                            <div className="flex flex-col items-center gap-2 px-5 py-3 rounded-2xl bg-[rgba(13,21,37,0.8)] backdrop-blur-md border border-[#FF8C00]/20 shadow-[0_0_24px_rgba(255,140,0,0.08)]">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-[#FF8C00]/90 tracking-wide">
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FF8C00] opacity-60" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-[#FF8C00]" />
+                                    </span>
+                                    <span>{tr("gatheringInfo", lang)}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {Array.from({ length: getTotalQuestions(interviewState.category as SymptomCategory) }).map((_, i) => {
+                                        const answered = i < (interviewState.answers?.length ?? 0);
+                                        const current = i === (interviewState.answers?.length ?? 0);
+                                        return (
+                                            <motion.div
+                                                key={i}
+                                                initial={{ scale: 0.8 }}
+                                                animate={{ scale: current ? 1.2 : 1 }}
+                                                className={`relative h-3 w-3 rounded-full transition-all duration-300 ${
+                                                    answered
+                                                        ? "bg-[#FF8C00] shadow-[0_0_8px_rgba(255,140,0,0.5)]"
+                                                        : current
+                                                            ? "bg-[#FF8C00]/40 ring-2 ring-[#FF8C00]/60"
+                                                            : "bg-white/10 border border-white/15"
+                                                }`}
+                                            >
+                                                {answered && (
+                                                    <motion.div
+                                                        initial={{ scale: 0 }}
+                                                        animate={{ scale: 1 }}
+                                                        className="absolute inset-0 flex items-center justify-center text-[8px] text-white font-bold"
+                                                    >
+                                                        ✓
+                                                    </motion.div>
+                                                )}
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
+                                <span className="text-[11px] text-white/40 font-medium">
+                                    {tr("questionOf", lang)} {Math.min((interviewState.answers?.length ?? 0) + 1, getTotalQuestions(interviewState.category as SymptomCategory))} / {getTotalQuestions(interviewState.category as SymptomCategory)}
+                                </span>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Input Area */}
                 <div className="w-full max-w-[700px] shrink-0 relative z-30">
@@ -738,17 +906,20 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                     <ChatInput
                         isListening={false}
                         onOptionClick={(id) => {
+                            vibrateTap();
                             if (id === 'medicine') onPickMedicineImage();
                             if (id === 'clinic') document.getElementById('clinic-finder-btn')?.click();
                             if (id === 'profile') setShowProfileSetup(true);
                         }}
-                        placeholder="ನಿಮ್ಮ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ ಹೇಳಿ..."
+                        placeholder={tr("placeholder", lang)}
                         getPayload={() => ({
                             lat: userLocation?.lat,
                             lng: userLocation?.lng,
                             history: getHistory(),
                             patientProfile: userProfile,
-                            symptomsTracker: getClientSymptomsTracker()
+                            symptomsTracker: getClientSymptomsTracker(),
+                            interviewState,
+                            caretakerAge: caretakerActive ? caretakerAge : undefined,
                         })}
                         onVoiceResponse={(payload: VoiceResponse) => {
                             if (payload.transcript) {
@@ -759,6 +930,11 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                             }
                             if (payload.audio) {
                                 latestAudioRef.current = payload.audio;
+                            }
+                            if (payload.interviewState) {
+                                setInterviewState(payload.interviewState);
+                            } else if (payload.responseType === "advice") {
+                                setInterviewState(DEFAULT_INTERVIEW_STATE);
                             }
                             if (payload.transcript && payload.severity) {
                                 trackSymptom(payload.transcript, payload.severity);
@@ -790,10 +966,12 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                         }}
                     />
 
-                    <div className="flex items-center justify-center gap-4 mt-6">
+                    {/* Bottom action buttons — below input */}
+                    <div className="flex items-center justify-center gap-3 mt-4">
                         {messages.length === 0 ? (
                             <ImportButtons
                                 onImport={(id) => {
+                                    vibrateTap();
                                     if (id === 'medicine') onPickMedicineImage();
                                     if (id === 'clinic') document.getElementById('clinic-finder-btn')?.click();
                                 }}
@@ -802,21 +980,58 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                             <div className="flex gap-3">
                                 <button
                                     onClick={downloadPrescription}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-[#060A14] hover:bg-[#0D1525] text-xs font-medium text-white/60 hover:text-white transition-all"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-[#060A14] hover:bg-[#0D1525] text-xs font-medium text-white/60 hover:text-white transition-all min-h-[48px]"
                                 >
-                                    Download Prescription
+                                    {tr("downloadPrescription", lang)}
                                 </button>
                                 <button
                                     onClick={() => onPickMedicineImage()}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-[#060A14] hover:bg-[#0D1525] text-xs font-medium text-white/60 hover:text-white transition-all"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-[#060A14] hover:bg-[#0D1525] text-xs font-medium text-white/60 hover:text-white transition-all min-h-[48px]"
                                 >
                                     <Pill className="h-3.5 w-3.5" />
-                                    Scan Medicine
+                                    {tr("scanMedicine", lang)}
                                 </button>
                             </div>
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* Bottom bar: 3 buttons always visible */}
+            <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4 py-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+                <button
+                    onClick={() => { vibrateTap(); onPickMedicineImage(); }}
+                    className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-medium transition-all active:scale-95 min-h-[48px]"
+                    style={{
+                        background: "rgba(255,140,0,0.08)",
+                        border: "1px solid rgba(255,140,0,0.15)",
+                        color: "#FF8C00",
+                    }}
+                >
+                    💊 {tr("medicine", lang)}
+                </button>
+                <button
+                    onClick={() => { vibrateTap(); document.getElementById('clinic-finder-btn')?.click(); }}
+                    className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-medium transition-all active:scale-95 min-h-[48px]"
+                    style={{
+                        background: "rgba(0,229,160,0.06)",
+                        border: "1px solid rgba(0,229,160,0.15)",
+                        color: "#00E5A0",
+                    }}
+                >
+                    📍 {tr("clinic", lang)}
+                </button>
+                <a
+                    href="tel:108"
+                    className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95 min-h-[48px] no-underline"
+                    style={{
+                        background: "rgba(255,68,68,0.08)",
+                        border: "1px solid rgba(255,68,68,0.2)",
+                        color: "#FF4444",
+                    }}
+                >
+                    🚨 108
+                </a>
             </div>
 
             {toast && (
@@ -838,27 +1053,16 @@ export function MainScreen({ language, onLanguageSwitch }: MainScreenProps) {
                             <LoaderCircle className="absolute h-16 w-16 animate-spin text-[#FF8C00]" />
                             <Pill className="h-6 w-6 text-white" />
                         </div>
-                        <p className="mt-8 text-base font-bold tracking-wide text-white">{t.scanning}</p>
-                        <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-white/40">{t.analyzingMedicine}</p>
+                        <p className="mt-8 text-base font-bold tracking-wide text-white">{tr("scanning", lang)}</p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-white/40">{tr("analyzingMedicine", lang)}</p>
                     </div>
                 </div>
             )}
 
-            <ResponseCard
-                open={cardOpen}
-                text={cardText}
-                severity={cardSeverity}
-                severityLabel={severityLabel}
-                replayLabel={t.replay}
-                clinic={cardClinic}
-                onReplay={() => playAudio(latestAudioRef.current)}
-                onClose={() => setCardOpen(false)}
-            />
-
-            {/* Keeping components that hold logic visually hidden but accessible to DOM clicks */}
+            {/* Hidden components */}
             <div className="opacity-0 pointer-events-none absolute w-[1px] h-[1px] overflow-hidden">
                 <ClinicFinder
-                    label={t.clinic} sublabel="" permissionDeniedLabel="" onClinicFound={(clinic) => {
+                    label={tr("clinic", lang)} sublabel="" permissionDeniedLabel="" onClinicFound={(clinic) => {
                         const text =
                             language === "kannada"
                                 ? `ಹತ್ತಿರದ ಕೇಂದ್ರ: ${clinic.name}, ${clinic.district}. ಸಮಯ: ${clinic.timing}.`

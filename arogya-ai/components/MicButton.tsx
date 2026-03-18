@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Mic, Loader2 } from 'lucide-react';
 import { useVoiceRecorder, RecordingState } from '@/hooks/useVoiceRecorder';
 import { DM_Sans } from 'next/font/google';
+import { t, type Language } from '@/lib/translations';
 
 const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500'] });
 
@@ -13,33 +14,6 @@ interface MicButtonProps {
   getPayload?: () => Record<string, any>;
 }
 
-const IDLE_BUTTON_LABELS = {
-  kannada: "ಕೇಳಿ · Ask",
-  hindi: "पूछें · Ask",
-  english: "Ask",
-};
-
-const LABELS = {
-  kannada: {
-    idleHelp: "Tap to speak · ಮಾತನಾಡಲು ಟ್ಯಾಪ್ ಮಾಡಿ",
-    recording: "ಮಾತನಾಡಿ... (ಕಳುಹಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ)",
-    cancel: "ರದ್ದಾಯಿತು", 
-    processing: "ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ"
-  },
-  hindi: {
-    idleHelp: "Tap to speak · बोलने के लिए टैप करें",
-    recording: "बोलिए... (भेजने के लिए टैप करें)",
-    cancel: "रद्द किया गया",
-    processing: "भेजा जा रहा है"
-  },
-  english: {
-    idleHelp: "Tap to speak",
-    recording: "Recording... (Tap to send)",
-    cancel: "Cancelled",
-    processing: "Sending..."
-  }
-};
-
 export function MicButton({ language, onAudioProcessed, onError = () => {}, onStateChange, getPayload }: MicButtonProps) {
   const {
     recordingState,
@@ -49,8 +23,6 @@ export function MicButton({ language, onAudioProcessed, onError = () => {}, onSt
     stopRecording,
     cancelRecording
   } = useVoiceRecorder(language, onAudioProcessed, onError, getPayload);
-
-  const startXRef = useRef<number>(0);
 
   useEffect(() => {
     onStateChange?.(recordingState, recordingTime, audioLevel);
@@ -63,9 +35,17 @@ export function MicButton({ language, onAudioProcessed, onError = () => {}, onSt
   }, [cancelRecording]);
 
   const handleClick = (e: React.MouseEvent) => {
-    // Only primary button
     if (e.button !== 0) return;
     
+    // Resume AudioContext on user gesture (fixes Safari autoplay)
+    if (typeof window !== 'undefined' && (window as any).AudioContext) {
+      try {
+        const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
+        ctx.close();
+      } catch { /* ignore */ }
+    }
+
     if (recordingState === "idle") {
       startRecording();
     } else if (recordingState === "recording") {
@@ -73,14 +53,20 @@ export function MicButton({ language, onAudioProcessed, onError = () => {}, onSt
     }
   };
 
-  const langKey = (['kannada', 'hindi', 'english'].includes(language) ? language : 'english') as keyof typeof LABELS;
-  const labels = LABELS[langKey];
-  const idleBtnLabel = IDLE_BUTTON_LABELS[langKey as keyof typeof IDLE_BUTTON_LABELS];
+  const lang = (['kannada', 'hindi', 'english', 'telugu'].includes(language) ? language : 'english') as Language;
 
   const isRecording = recordingState === "recording";
   const isCancelled = recordingState === "cancelled";
   const isProcessing = recordingState === "processing";
   const isIdle = recordingState === "idle";
+
+  const buttonLabel = isRecording
+    ? t('tapToSend', lang)
+    : isCancelled
+      ? t('cancelled', lang)
+      : isProcessing
+        ? t('sending', lang)
+        : t('askButton', lang);
 
   return (
     <div className={`relative flex flex-col items-center justify-center ${dmSans.className}`}>
@@ -106,10 +92,7 @@ export function MicButton({ language, onAudioProcessed, onError = () => {}, onSt
         )}
 
         <span className="font-medium relative z-10 whitespace-nowrap">
-          {isRecording ? labels.recording :
-           isCancelled ? labels.cancel :
-           isProcessing ? labels.processing :
-           idleBtnLabel}
+          {buttonLabel}
         </span>
       </button>
 
@@ -119,7 +102,7 @@ export function MicButton({ language, onAudioProcessed, onError = () => {}, onSt
           isIdle ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        {labels.idleHelp}
+        {t('tapToSpeak', lang)}
       </div>
     </div>
   );

@@ -6,6 +6,17 @@ import type { SupportedLanguage } from "@/prompts/health";
 import { buildContext, type Message } from "@/lib/memory";
 import { checkEmergencyRules } from "@/lib/rule-engine";
 import { checkEscalation } from "@/lib/symptom-tracker";
+import { cacheKey, getCached, setCache } from "@/lib/cache";
+import {
+    detectSymptomCategory,
+    containsSymptom,
+    shouldSkipInterview,
+    getNextQuestion,
+    getTotalQuestions,
+    buildInterviewContext,
+    type InterviewState,
+    type SymptomCategory,
+} from "@/lib/symptom-interview";
 
 import { calculateRiskScore as calcRisk } from "@/lib/risk-engine";
 import medicines from "@/lib/rag/medicines.json";
@@ -32,6 +43,8 @@ type VoicePayload = {
     history?: Message[];
     patientProfile?: any;
     symptomsTracker?: any;
+    interviewState?: InterviewState;
+    caretakerAge?: number;
 };
 
 function distanceInKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -87,74 +100,6 @@ function contextByIntent(intent: HealthIntent, message: string): string {
     return "General health support for rural Indian users. Recommend PHC visit for unresolved concerns.";
 }
 
-function getRiskEmoji(severity: "safe" | "caution" | "urgent" | "critical"): string {
-    if (severity === "safe") return "🟢 Low";
-    if (severity === "caution") return "🟡 Moderate";
-    return "🔴 High";
-}
-
-function parseSymptoms(message: string): string[] {
-    return message
-        .split(/[,.!?]| and /gi)
-        .map((part) => part.trim())
-        .filter((part) => part.length > 2)
-        .slice(0, 5);
-}
-
-function ensureStructuredAssessment(input: {
-    draftText: string;
-    message: string;
-    severity: "safe" | "caution" | "urgent" | "critical";
-    clinic?: Clinic;
-}): string {
-    const draft = input.draftText?.trim() ?? "";
-    const hasStructuredHeading = draft.includes("🩺 AI Health Assessment");
-    const hasDisclaimer = draft.includes("This AI health assessment is for informational purposes only");
-
-    if (hasStructuredHeading && hasDisclaimer) {
-        return draft;
-    }
-
-    const symptoms = parseSymptoms(input.message);
-    const symptomList = symptoms.length > 0 ? symptoms.map((item) => `- ${item}`).join("\n") : "- Not enough symptom detail provided";
-    const urgent = input.severity === "urgent" || input.severity === "critical";
-    const clinicLine = input.clinic
-        ? `- Nearest clinic option: ${input.clinic.name}, ${input.clinic.district} (Timing: ${input.clinic.timing}, Phone: ${input.clinic.phone})`
-        : "- Visit the nearest clinic/PHC for physical examination if symptoms continue";
-
-    return `🩺 AI Health Assessment
-
-Patient Symptoms:
-${symptomList}
-
-Possible Conditions:
-- Possible causes may include viral infection, gastric irritation, stress-related symptoms, or other common illnesses.
-- A proper clinical examination is needed to confirm the exact cause.
-
-Risk Level:
-${getRiskEmoji(input.severity)}
-
-Recommended Actions:
-- Rest, drink clean fluids, and monitor temperature/symptom changes every 4-6 hours.
-- Avoid self-medication with prescription drugs.
-- ${draft || "Follow supportive care and monitor for worsening symptoms."}
-
-When to Seek Medical Attention:
-- Seek immediate doctor care if breathing difficulty, chest pain, confusion, fainting, persistent vomiting, blood in vomit/stool, or very high fever occurs.
-- ${urgent ? "Visit a doctor immediately." : "Visit a doctor soon if symptoms do not improve in 24-48 hours."}
-${clinicLine}
-
-Suggested Medical Tests:
-- CBC, CRP/ESR, urine routine, and additional tests based on doctor evaluation.
-
-Lifestyle & Recovery Advice:
-- Stay hydrated, eat light meals, sleep adequately, and avoid exertion until recovery.
-- Maintain hygiene and continue regular long-term medications only as advised by your doctor.
-
-Disclaimer:
-This AI health assessment is for informational purposes only and should not replace professional medical advice. Always consult a qualified healthcare provider for diagnosis or treatment.`;
-}
-
 export async function POST(req: Request) {
     try {
         const payload = (await req.json()) as VoicePayload;
@@ -177,32 +122,128 @@ export async function POST(req: Request) {
             );
         }
 
-        // F7: Emergency Rules FIRST
+        // ── Emergency Rules FIRST ──────────────────────
         const emergencyRule = checkEmergencyRules(message);
         if (emergencyRule) {
             const riskScore = calcRisk(payload.patientProfile, payload.symptomsTracker, payload.history);
             const emergencyClinic = nearestClinic(payload.lat, payload.lng) ?? (clinics as Clinic[])[0];
             const emergencySeverity = emergencyRule.severity === "high" ? "urgent" : emergencyRule.severity;
-            const emergencyText = ensureStructuredAssessment({
-                draftText: "Call emergency services (108) now and do not delay medical evaluation.",
-                message,
-                severity: emergencySeverity,
-                clinic: emergencyClinic,
-            });
+            
+            // Simple 3-sentence emergency response
+            const emergencyTexts: Record<string, string> = {
+                kannada: "ಇದು ತುರ್ತು ಪರಿಸ್ಥಿತಿ, ತಕ್ಷಣ 108 ಕರೆ ಮಾಡಿ. ರೋಗಿಯನ್ನು ಮಲಗಿಸಿ ಮತ್ತು ಶಾಂತವಾಗಿರಿ. ಸಮೀಪದ PHC ಗೆ ತಕ್ಷಣ ಹೋಗಿ.",
+                hindi: "यह आपातकालीन स्थिति है, तुरंत 108 कॉल करें। मरीज़ को लिटाएं और शांत रहें। नजदीकी PHC में तुरंत जाएं।",
+                telugu: "ఇది అత్యవసర పరిస్థితి, వెంటనే 108 కాల్ చేయండి. రోగిని పడుకోబెట్టండి మరియు శాంతంగా ఉండండి. దగ్గరలోని PHC కి వెంటనే వెళ్ళండి.",
+                english: "This is an emergency, call 108 immediately. Keep the patient lying down and stay calm. Go to the nearest PHC right away.",
+            };
+            const emergencyText = emergencyTexts[language] || emergencyTexts.english;
+
+            let emergencyAudio = "";
+            try {
+                emergencyAudio = await murfTextToSpeech({ text: emergencyText, language, urgent: true });
+            } catch { /* non-fatal */ }
+
             return NextResponse.json({
                 text: emergencyText,
-                audio: "", // Wait, TTS generated here or client? fallback to client or generate here.
-                severity: emergencyRule.severity,
+                audio: emergencyAudio,
+                severity: emergencySeverity,
                 intent: emergencyRule.action,
                 clinic: emergencyClinic,
                 transcript: message,
-                riskScore
+                riskScore,
+                responseType: "advice" as const,
             });
         }
 
-        const intent = await classifyIntent(message);
-        const clinicInfo = nearestClinic(payload.lat, payload.lng) ?? (clinics as Clinic[])[0];
+        // ── SYMPTOM INTERVIEW FLOW ───────────────────────
+        const iv = payload.interviewState;
 
+        // CASE 1: No active interview, message has a symptom → START interview
+        if ((!iv || !iv.active) && containsSymptom(message) && !shouldSkipInterview(message)) {
+            const category = detectSymptomCategory(message);
+            const firstQuestion = getNextQuestion(category, 0);
+
+            let questionAudio = "";
+            try {
+                questionAudio = await murfTextToSpeech({ text: firstQuestion ?? "", language });
+            } catch { /* non-fatal */ }
+
+            return NextResponse.json({
+                text: firstQuestion,
+                audio: questionAudio,
+                severity: "safe",
+                intent: "symptom",
+                transcript: message,
+                responseType: "question" as const,
+                interviewState: {
+                    active: true,
+                    category,
+                    questionIndex: 1,
+                    answers: [],
+                } satisfies InterviewState,
+            });
+        }
+
+        // CASE 2: Interview active, still have questions → ask NEXT
+        if (iv?.active) {
+            const totalQ = getTotalQuestions(iv.category as SymptomCategory);
+            const updatedAnswers = [...(iv.answers ?? []), message];
+
+            if (iv.questionIndex < totalQ) {
+                const nextQ = getNextQuestion(iv.category as SymptomCategory, iv.questionIndex);
+
+                let questionAudio = "";
+                try {
+                    questionAudio = await murfTextToSpeech({ text: nextQ ?? "", language });
+                } catch { /* non-fatal */ }
+
+                return NextResponse.json({
+                    text: nextQ,
+                    audio: questionAudio,
+                    severity: "safe",
+                    intent: "symptom",
+                    transcript: message,
+                    responseType: "question" as const,
+                    interviewState: {
+                        active: true,
+                        category: iv.category,
+                        questionIndex: iv.questionIndex + 1,
+                        answers: updatedAnswers,
+                    } satisfies InterviewState,
+                });
+            }
+
+            // CASE 3: All questions answered → Build context → full advice
+            const interviewContext = buildInterviewContext(
+                iv.category as SymptomCategory,
+                updatedAnswers,
+            );
+
+            const originalSymptom = iv.category as string;
+            message = `Patient reported ${originalSymptom} symptoms. Interview details:\n${interviewContext}\n\nLatest answer: ${message}`;
+        }
+
+        // ── CHECK CACHE ──────────────────────────────────
+        const key = cacheKey(message, language);
+        const cached = getCached(key);
+        if (cached && !iv?.active) {
+            return NextResponse.json({
+                ...cached,
+                transcript: payload.message?.trim() ?? message,
+                fromCache: true,
+            });
+        }
+
+        // ── PARALLEL API CALLS ───────────────────────────
+        const clinicInfo = nearestClinic(payload.lat, payload.lng) ?? (clinics as Clinic[])[0];
+        const riskScore = calcRisk(payload.patientProfile, payload.symptomsTracker, payload.history);
+
+        const [intent] = await Promise.all([
+            classifyIntent(message),
+            Promise.resolve(riskScore),
+        ]);
+
+        // Build context (sync, fast)
         let context = contextByIntent(intent, message);
         if (intent === "location" || intent === "emergency" || message.toLowerCase().includes("clinic")) {
             context += `\nRecommended Nearest Clinic to tell the user about: ${JSON.stringify(clinicInfo)}`;
@@ -215,72 +256,92 @@ export async function POST(req: Request) {
 
         if (payload.patientProfile) {
             const rules = payload.patientProfile;
-            context += `\n\nPatient profile: Age ${rules.age}, Conditions: ${rules.chronicConditions?.join(", ") ?? "None"}. Personalise your response accordingly.`;
+            context += `\n\nPatient profile: Age ${rules.age}, Conditions: ${rules.chronicConditions?.join(", ") ?? "None"}.`;
         }
 
+        // Severity classification
         let severity = await classifySeverity({ message, context, intent });
 
-        // F10: Tracker overrides
+        // Tracker overrides
         const escalated = checkEscalation(message, payload.symptomsTracker);
         if (escalated) {
             if (severity === "safe") severity = "caution";
             else if (severity === "caution") severity = "urgent";
         }
 
-        const rawText = await generateHealthResponse({
+        // ── LLM CALL (3-sentence response) ────────────────────
+        const text = await generateHealthResponse({
             message,
             language,
             context,
             severity,
             intent,
+            caretakerAge: payload.caretakerAge,
         });
 
         const clinic = (severity === "urgent" || intent === "location" || message.toLowerCase().includes("clinic")) ? clinicInfo : undefined;
-        const text = ensureStructuredAssessment({
-            draftText: rawText,
-            message,
-            severity,
-            clinic,
-        });
 
+        // ── TTS ───
         let audio = "";
         try {
-            audio = await murfTextToSpeech({ text, language });
+            audio = await murfTextToSpeech({
+                text,
+                language,
+                urgent: severity === "urgent",
+            });
         } catch (ttsError) {
             console.error("Murf TTS non-fatal failure", ttsError);
         }
 
-        // F6: Risk score
-        const riskScore = calcRisk(payload.patientProfile, payload.symptomsTracker, payload.history);
+        // ── Build response ──────────────────────────────
+        const isPostInterview = iv?.active && iv.questionIndex >= getTotalQuestions(iv.category as SymptomCategory);
 
-        return NextResponse.json({
+        const responseData: Record<string, unknown> = {
             text,
             audio,
             severity,
             intent,
             clinic,
-            transcript: message,
+            transcript: payload.message?.trim() ?? message,
             riskScore,
-            escalated
-        });
+            escalated,
+            responseType: "advice" as const,
+            ...(isPostInterview ? {
+                interviewState: {
+                    active: false,
+                    category: "general",
+                    questionIndex: 0,
+                    answers: [],
+                } satisfies InterviewState,
+            } : {}),
+        };
+
+        // Cache the response
+        if (!iv?.active) {
+            setCache(key, responseData);
+        }
+
+        return NextResponse.json(responseData);
     } catch (error) {
         console.error("/api/voice failed", error);
 
         const message = error instanceof Error ? error.message : "";
         if (message.includes("Groq STT failed") || message.includes("Murf STT failed")) {
             return NextResponse.json(
-                {
-                    error: "Voice transcription is unavailable right now. Please try again in a quieter place or try once more.",
-                },
+                { error: "Voice transcription is unavailable right now. Please try again." },
                 { status: 503 },
             );
         }
 
+        if (message.includes("Timeout")) {
+            return NextResponse.json(
+                { error: "The request took too long. Please try again." },
+                { status: 504 },
+            );
+        }
+
         return NextResponse.json(
-            {
-                error:
-                    "I am having a temporary issue right now. Please try again in a moment.",
-            },
+            { error: "I am having a temporary issue right now. Please try again in a moment." },
             { status: 500 },
         );
     }

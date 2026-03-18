@@ -65,6 +65,10 @@ export function useVoiceRecorder(
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Resume AudioContext if suspended (Safari autoplay policy fix)
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
       const analyser = audioContext.createAnalyser();
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);

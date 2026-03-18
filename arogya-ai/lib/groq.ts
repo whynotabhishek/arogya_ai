@@ -6,17 +6,27 @@ import {
     TELUGU_PROMPT,
     type SupportedLanguage,
 } from "@/prompts/health";
+import { withTimeout, withRetry } from "@/lib/cache";
 
 export type HealthIntent = "symptom" | "medicine_query" | "emergency" | "location" | "general";
 export type Severity = "safe" | "caution" | "urgent";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy_key_for_build" });
-const MODEL = "llama-3.3-70b-versatile";
 
-async function complete(systemPrompt: string, userPrompt: string, maxTokens: number): Promise<string> {
+// Fast model for classification (10x faster), quality model for health advice
+const FAST_MODEL = "llama-3.1-8b-instant";
+const QUALITY_MODEL = "llama-3.3-70b-versatile";
+
+async function complete(
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens: number,
+    model = QUALITY_MODEL,
+    temperature = 0.3,
+): Promise<string> {
     const completion = await groq.chat.completions.create({
-        model: MODEL,
-        temperature: 0.2,
+        model,
+        temperature,
         max_tokens: maxTokens,
         messages: [
             { role: "system", content: systemPrompt },
@@ -45,47 +55,92 @@ function languagePrompt(language: SupportedLanguage): string {
     return ENGLISH_PROMPT;
 }
 
+/**
+ * Classify intent using the FAST model (8B) with timeout + retry
+ */
 export async function classifyIntent(message: string): Promise<HealthIntent> {
-    const completion = await complete(
-        "Classify patient input into one of: symptom, medicine_query, emergency, location, general. Return only strict JSON like {\"intent\":\"symptom\"}.",
-        message,
-        120,
-    );
+    const fn = () =>
+        withTimeout(
+            complete(
+                "Classify patient input into one of: symptom, medicine_query, emergency, location, general. Return only strict JSON like {\"intent\":\"symptom\"}.",
+                message,
+                120,
+                FAST_MODEL,
+                0.1,
+            ),
+            8000,
+        );
 
-    const json = extractJson<{ intent?: HealthIntent }>(completion, { intent: "general" });
-    return json.intent ?? "general";
+    try {
+        const completion = await withRetry(fn, 1);
+        const json = extractJson<{ intent?: HealthIntent }>(completion, { intent: "general" });
+        return json.intent ?? "general";
+    } catch {
+        return "general";
+    }
 }
 
+/**
+ * Classify severity using the FAST model with timeout
+ */
 export async function classifySeverity(input: {
     message: string;
     context: string;
     intent: HealthIntent;
 }): Promise<Severity> {
-    const completion = await complete(
-        "You are a triage assistant. Return one severity only in strict JSON as {\"severity\":\"safe|caution|urgent\"}. Prioritize patient safety.",
-        `Intent: ${input.intent}\nMessage: ${input.message}\nContext: ${input.context}`,
-        120,
-    );
+    try {
+        const completion = await withTimeout(
+            complete(
+                "You are a triage assistant. Return one severity only in strict JSON as {\"severity\":\"safe|caution|urgent\"}. Prioritize patient safety.",
+                `Intent: ${input.intent}\nMessage: ${input.message}\nContext: ${input.context}`,
+                120,
+                FAST_MODEL,
+                0.1,
+            ),
+            8000,
+        );
 
-    const json = extractJson<{ severity?: Severity }>(completion, { severity: "caution" });
-    return json.severity ?? "caution";
+        const json = extractJson<{ severity?: Severity }>(completion, { severity: "caution" });
+        return json.severity ?? "caution";
+    } catch {
+        return "caution";
+    }
 }
 
+/**
+ * Generate the full health response using the QUALITY model with retry.
+ * max_tokens: 120, temperature: 0.3 — enforces concise 3-sentence responses.
+ */
 export async function generateHealthResponse(input: {
     message: string;
     language: SupportedLanguage;
     context: string;
     severity: Severity;
     intent: HealthIntent;
+    caretakerAge?: number;
 }): Promise<string> {
-    return complete(
-        languagePrompt(input.language),
+    let userPrompt =
         `User message: ${input.message}\n` +
         `Intent: ${input.intent}\n` +
         `Severity: ${input.severity}\n` +
         `RAG context: ${input.context}\n` +
-        "Respond using this exact structure and headings: 🩺 AI Health Assessment, Patient Symptoms, Possible Conditions, Risk Level, Recommended Actions, When to Seek Medical Attention, Suggested Medical Tests, Lifestyle & Recovery Advice, and Disclaimer. " +
-        "Use cautious wording and never give definitive diagnosis. Always include the disclaimer text: This AI health assessment is for informational purposes only and should not replace professional medical advice. Always consult a qualified healthcare provider for diagnosis or treatment.",
-        700,
-    );
+        "Give exactly 3 sentences. No headers, no lists, no bullet points.";
+
+    if (input.caretakerAge) {
+        userPrompt += `\nThis is a caretaker asking for a ${input.caretakerAge} year old patient. Address advice for the patient, not the caretaker.`;
+    }
+
+    const fn = () =>
+        withTimeout(
+            complete(
+                languagePrompt(input.language),
+                userPrompt,
+                120,
+                QUALITY_MODEL,
+                0.3,
+            ),
+            10000,
+        );
+
+    return withRetry(fn, 1);
 }
